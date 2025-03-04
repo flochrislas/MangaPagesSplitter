@@ -3,12 +3,18 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>flochrislas</groupId>
+  <organization>
+    <name>ArdaCreation</name>
+  </organization>
+  <inceptionYear>2025</inceptionYear>
+  <description>Tool to split double page manga spreads into single pages</description>
   <artifactId>MangaPagesSplitter</artifactId>
   <version>1.0-SNAPSHOT</version>
-  <packaging>pom</packaging>
+  <packaging>jar</packaging>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <skip.signing>true</skip.signing>
   </properties>
 
   <dependencies>
@@ -19,15 +25,32 @@
       <version>7.5.5</version>
     </dependency>
   </dependencies>
+
+  <profiles>
+    <!-- Use this profile in order to sign the app -->
+    <!-- mvn package -Psign-exe -Dsigning.keystore=path\to\keystore.pfx -Dsigning.storepass=password -->
+    <profile>
+      <id>sign-exe</id>
+      <properties>
+        <skip.signing>false</skip.signing>
+      </properties>
+    </profile>
+  </profiles>
+
   <build>
     <plugins>
       <!-- This is enough to run the program with IntelliJ -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.14.0</version>
         <configuration>
-          <source>8</source>
-          <target>8</target>
+          <!-- Replace source/target with release flag -->
+          <release>8</release>
+          <!-- Add this to suppress specific warnings if needed -->
+          <compilerArgs>
+            <arg>-Xlint:all,-options,-path</arg>
+          </compilerArgs>
         </configuration>
       </plugin>
       <!-- Allows to build the application as a JAR file -->
@@ -50,6 +73,80 @@
             <goals>
               <goal>single</goal>
             </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- Allows to build the application as a Windows exe file -->
+      <plugin>
+        <groupId>com.akathist.maven.plugins.launch4j</groupId>
+        <artifactId>launch4j-maven-plugin</artifactId>
+        <version>2.5.3</version>
+        <executions>
+          <execution>
+            <id>l4j-gui</id>
+            <phase>package</phase>
+            <goals>
+              <goal>launch4j</goal>
+            </goals>
+            <configuration>
+              <headerType>console</headerType>
+              <outfile>target/MangaPagesSplitter.exe</outfile>
+              <jar>target/MangaPagesSplitter-1.0-SNAPSHOT-jar-with-dependencies.jar</jar>
+              <errTitle>MangaPagesSplitter</errTitle>
+              <classPath>
+                <mainClass>MangaPagesSplitter</mainClass>
+              </classPath>
+              <jre>
+                <minVersion>1.8.0</minVersion>
+                <path>%JAVA_HOME%;%PATH%</path>
+              </jre>
+              <versionInfo>
+                <fileVersion>1.0.0.0</fileVersion>
+                <txtFileVersion>1.0.0.0</txtFileVersion>
+                <fileDescription>MangaPagesSplitter Application</fileDescription>
+                <productVersion>1.0.0.0</productVersion>
+                <txtProductVersion>1.0.0.0</txtProductVersion>
+                <productName>MangaPagesSplitter</productName>
+                <internalName>MangaPagesSplitter</internalName>
+                <originalFilename>MangaPagesSplitter.exe</originalFilename>
+              </versionInfo>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- Allows to execute external program during maven build -->
+      <!-- To sign the app -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.5.0</version>
+        <executions>
+          <execution>
+            <id>sign-exe</id>
+            <phase>package</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <executable>signtool</executable>
+              <arguments>
+                <argument>sign</argument>
+                <argument>/f</argument>
+                <argument>${signing.keystore}</argument>
+                <argument>/p</argument>
+                <argument>${signing.storepass}</argument>
+                <argument>/fd</argument>
+                <argument>SHA256</argument>
+                <argument>/tr</argument>
+                <argument>http://timestamp.sectigo.com</argument>
+                <argument>/td</argument>
+                <argument>SHA256</argument>
+                <argument>/d</argument>
+                <argument>MangaPagesSplitter</argument>
+                <argument>${project.build.directory}\MangaPagesSplitter.exe</argument>
+              </arguments>
+              <skip>${skip.signing}</skip>
+            </configuration>
           </execution>
         </executions>
       </plugin>
