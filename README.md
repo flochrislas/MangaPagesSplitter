@@ -1,10 +1,10 @@
 # MangaPagesSplitter
 Transform a manga with 2 pages per image, into a manga with only one page per image.
 
-## Problem:
+### Problem:
 You have a manga you want to read on a tablet or a smartphone, but it shows double-pages spreads instead of single pages and it is difficult to read on your device.
 
-## Solution:
+### Solution:
 Use this program, and after a couple of clicks, your manga(s) will show single pages that are easy to read on smartphones and tablets.
 
 ## Application's features:
