@@ -8,11 +8,11 @@ You have a manga you want to read on a tablet or a smartphone, but it shows doub
 Use this program, and after a couple of clicks, your manga(s) will show single pages that are easy to read on smartphones and tablets.
 
 ## Application's features:
-- Basic, simple, straightforward, fast.
+- Basic, simple, straightforward, fast, _brutal_.
 - Split all manga's images vertically in half, order the right and left parts properly, and pack them into a CBZ file.
 - Can process multiple mangas at once, as long as they are in the same directory.
 - Mangas can be in the form of a folder containing images, RAR, ZIP, CBZ or CBR files.
-- All the original files will be deleted, and only the resulting single paged manga(s) will left in the end (make a copy if you want to keep "originals")
+- All the original files will be deleted, and only the resulting single paged manga(s) will left in the end (make a copy if you want to keep "originals").
 
 ## Flow
 - When you run the program, it will ask you to choose a directory.
