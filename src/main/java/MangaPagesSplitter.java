@@ -359,6 +359,7 @@ public class MangaPagesSplitter {
         // Calculate which images to actually process with exceptions
         int firstImageToProcess = Math.min(skipImagesFromStart, totalImages);
         int lastImageToProcess = Math.max(0, totalImages - skipImagesFromEnd);
+        int latestSinglePageImageIndex = -99;
 
         // Process each image
         for (int i = 0; i < imagePaths.size(); i++) {
@@ -382,7 +383,14 @@ public class MangaPagesSplitter {
                         shouldSplit = true;
                     }
                     else if (splitMode == 0 && !isExceptionImage) {
-                        shouldSplit = isWideImage;
+                        // Try to preserve special double-page spreads that can exist within otherwise single page images
+                        // Here we consider such special spread to be a wide image that is within 3 pages of the latest single page image
+                        boolean isSpecialSpread = (i - latestSinglePageImageIndex < 3);
+                        shouldSplit = isWideImage && !isSpecialSpread;
+                        // Set the latest page index for single page images
+                        if (!isWideImage) {
+                            latestSinglePageImageIndex = i;
+                        }
                         if (shouldSplit) {
                             System.out.println("Auto-detected double page for: " + imagePath.getFileName());
                         }
