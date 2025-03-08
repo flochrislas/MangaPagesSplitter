@@ -9,12 +9,14 @@
   <inceptionYear>2025</inceptionYear>
   <description>Tool to split double page manga spreads into single pages</description>
   <artifactId>MangaPagesSplitter</artifactId>
-  <version>1.0-SNAPSHOT</version>
+  <version>1.5</version>
   <packaging>jar</packaging>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <skip.signing>true</skip.signing>
+    <app.version>${project.version}</app.version>
+    <app.version.formatted>${project.version}.0.0</app.version.formatted>
   </properties>
 
   <dependencies>
@@ -91,7 +93,7 @@
             <configuration>
               <headerType>console</headerType>
               <outfile>target/MangaPagesSplitter.exe</outfile>
-              <jar>target/MangaPagesSplitter-1.0-SNAPSHOT-jar-with-dependencies.jar</jar>
+              <jar>target/MangaPagesSplitter-${app.version}-jar-with-dependencies.jar</jar>
               <errTitle>MangaPagesSplitter</errTitle>
               <classPath>
                 <mainClass>MangaPagesSplitter</mainClass>
@@ -101,11 +103,11 @@
                 <path>%JAVA_HOME%;%PATH%</path>
               </jre>
               <versionInfo>
-                <fileVersion>1.0.0.0</fileVersion>
-                <txtFileVersion>1.0.0.0</txtFileVersion>
+                <fileVersion>${app.version.formatted}</fileVersion>
+                <txtFileVersion>${app.version.formatted}</txtFileVersion>
                 <fileDescription>MangaPagesSplitter Application</fileDescription>
-                <productVersion>1.0.0.0</productVersion>
-                <txtProductVersion>1.0.0.0</txtProductVersion>
+                <productVersion>${app.version.formatted}</productVersion>
+                <txtProductVersion>${app.version.formatted}</txtProductVersion>
                 <productName>MangaPagesSplitter</productName>
                 <internalName>MangaPagesSplitter</internalName>
                 <originalFilename>MangaPagesSplitter.exe</originalFilename>
