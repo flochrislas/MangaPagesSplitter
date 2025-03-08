@@ -3,6 +3,8 @@ import com.github.junrar.exception.RarException;
 
 import javax.imageio.ImageIO;
 import javax.swing.*;
+import java.awt.*;
+import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
 import java.io.*;
 import java.nio.file.*;
@@ -16,6 +18,104 @@ public class MangaPagesSplitter {
     private static final String[] ARCHIVE_EXTENSIONS = {".rar", ".zip", ".cbr", ".cbz"};
 
     public static void main(String[] args) {
+        String[] options = {"Detect automatically for each manga", "Keep original images", "Split all images in half"};
+        int choice = showVerticalOptionDialog(
+                "Image Splitting Option",
+                "Choose an option:",
+                options,
+                0);  // Set "Detect automatically" as default option
+
+        if (choice == -1) {
+            // User cancelled, exit program
+            return;
+        }
+
+        int splitMode = choice; // 0=auto, 1=keep original, 2=split all
+        boolean isJapaneseManga = true; // Default to Japanese manga (right to left)
+        
+        // Default values for exceptions
+        int skipImagesFromStart = 0;
+        int skipImagesFromEnd = 0;
+        
+        // Default for rotation
+        boolean rotateWideImages = false;
+
+        // Ask about reading direction if splitting is possible
+        if (splitMode == 0 || splitMode == 2) {
+            String[] directionOptions = {"Japanese manga (right to left)", "Western style (left to right)"};
+            int directionChoice = showVerticalOptionDialog(
+                    "Reading Direction",
+                    "Choose reading direction:",
+                    directionOptions,
+                    0);
+
+            if (directionChoice == -1) {
+                // User cancelled, exit program
+                return;
+            }
+
+            isJapaneseManga = (directionChoice == 0);
+            
+            // Ask if user wants to make exceptions for certain pages
+            int makeExceptions = JOptionPane.showConfirmDialog(
+                    null,
+                    "Do you want to skip splitting certain pages at the beginning and/or end of each manga?",
+                    "Exceptions for Splitting",
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.QUESTION_MESSAGE);
+                    
+            if (makeExceptions == JOptionPane.YES_OPTION) {
+                skipImagesFromStart = getNumberInput(
+                        "Skip from Start",
+                        "Number of images to skip (not split) from the beginning:",
+                        0);
+                        
+                if (skipImagesFromStart < 0) {
+                    // User cancelled, exit program
+                    return;
+                }
+                
+                skipImagesFromEnd = getNumberInput(
+                        "Skip from End",
+                        "Number of images to skip (not split) from the end:",
+                        0);
+                        
+                if (skipImagesFromEnd < 0) {
+                    // User cancelled, exit program
+                    return;
+                }
+            }
+        }
+        
+        // Ask about rotating wide images if not splitting all
+        if (splitMode != 2) {
+            int rotateChoice = JOptionPane.showConfirmDialog(
+                    null,
+                    "Would you like to automatically rotate wide images (width > height) 90° clockwise?\n" +
+                    "This makes them easier to view in landscape mode on devices.",
+                    "Rotate Wide Images",
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.QUESTION_MESSAGE);
+                    
+            rotateWideImages = (rotateChoice == JOptionPane.YES_OPTION);
+        }
+        
+        // Ask about deleting original files
+        String[] deletionOptions = {"Keep original files", "Delete original files after processing"};
+        int deletionChoice = showVerticalOptionDialog(
+                "File Deletion Option",
+                "Choose what to do with original files:",
+                deletionOptions,
+                0);  // "Keep original files" is now at index 0 and default
+                
+        if (deletionChoice == -1) {
+            // User cancelled, exit program
+            return;
+        }
+        
+        boolean deleteOriginals = (deletionChoice == 1); // Now "Delete" is at index 1
+
+        // Rest of the method remains the same
         JFileChooser chooser = new JFileChooser();
         chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         chooser.setDialogTitle("Select Root Directory for Manga Processing");
@@ -23,16 +123,34 @@ public class MangaPagesSplitter {
         if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
             String rootFolder = chooser.getSelectedFile().getAbsolutePath();
 
+            String confirmMessage = "This will extract archives, read all folders, process images according to your selection, and create CBZ files.\n";
+            if (deleteOriginals) {
+                confirmMessage += "Original images, archives and extracted folders will be deleted.\n";
+            } else {
+                confirmMessage += "Original images, archives and extracted folders will be kept.\n";
+            }
+            
+            // Add exception info to confirmation message if applicable
+            if ((splitMode == 0 || splitMode == 2) && (skipImagesFromStart > 0 || skipImagesFromEnd > 0)) {
+                confirmMessage += "The program will skip splitting the first " + skipImagesFromStart + 
+                                " and the last " + skipImagesFromEnd + " images of each manga.\n";
+            }
+            
+            // Add rotation info to confirmation message
+            if (rotateWideImages && splitMode != 2) {
+                confirmMessage += "Wide images (width > height) that are not split will be rotated 90° clockwise.\n";
+            }
+            
+            confirmMessage += "Are you sure you want to continue?";
+
             int confirm = JOptionPane.showConfirmDialog(null,
-                    "This will extract archives, split all images, and create CBZ files.\n" +
-                    "Original archives and extracted folders will be deleted.\n" +
-                    "Are you sure you want to continue?",
+                    confirmMessage,
                     "Confirm Operation",
                     JOptionPane.YES_NO_OPTION,
                     JOptionPane.WARNING_MESSAGE);
 
             if (confirm == JOptionPane.YES_OPTION) {
-                process(rootFolder);
+                process(rootFolder, splitMode, isJapaneseManga, deleteOriginals, skipImagesFromStart, skipImagesFromEnd, rotateWideImages);
                 JOptionPane.showMessageDialog(null,
                         "Processing complete!",
                         "Done",
@@ -41,7 +159,68 @@ public class MangaPagesSplitter {
         }
     }
 
-    private static void process(String rootFolder) {
+    private static int getNumberInput(String title, String message, int defaultValue) {
+        String input = JOptionPane.showInputDialog(
+                null,
+                message,
+                title,
+                JOptionPane.QUESTION_MESSAGE);
+                
+        if (input == null) {
+            // User cancelled
+            return -1;
+        }
+        
+        try {
+            return Integer.parseInt(input);
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(
+                    null,
+                    "Please enter a valid number. Using default value: " + defaultValue,
+                    "Invalid Input",
+                    JOptionPane.WARNING_MESSAGE);
+            return defaultValue;
+        }
+    }
+
+    private static int showVerticalOptionDialog(String title, String message, String[] options, int defaultOption) {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+
+        JLabel messageLabel = new JLabel(message);
+        panel.add(messageLabel);
+        panel.add(Box.createRigidArea(new Dimension(0, 10))); // Add spacing
+
+        ButtonGroup buttonGroup = new ButtonGroup();
+        JRadioButton[] radioButtons = new JRadioButton[options.length];
+
+        for (int i = 0; i < options.length; i++) {
+            radioButtons[i] = new JRadioButton(options[i]);
+            radioButtons[i].setActionCommand(String.valueOf(i));
+            buttonGroup.add(radioButtons[i]);
+            panel.add(radioButtons[i]);
+        }
+
+        // Select the default option
+        radioButtons[defaultOption].setSelected(true);
+
+        int result = JOptionPane.showConfirmDialog(
+                null,
+                panel,
+                title,
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.QUESTION_MESSAGE);
+
+        if (result == JOptionPane.OK_OPTION) {
+            String actionCommand = buttonGroup.getSelection().getActionCommand();
+            return Integer.parseInt(actionCommand);
+        } else {
+            return -1; // Cancelled
+        }
+    }
+
+    private static void process(String rootFolder, int splitMode, boolean isJapaneseManga, boolean deleteOriginals, 
+                              int skipImagesFromStart, int skipImagesFromEnd, boolean rotateWideImages) {
         try {
             // Step 1: Extract all archives and collect paths
             List<Path> originalArchives = extractAllArchives(rootFolder);
@@ -53,7 +232,10 @@ public class MangaPagesSplitter {
                     .filter(Files::isDirectory)
                     .forEach(folder -> {
                         try {
-                            Path newCbz = processFolderAndCreateCBZ(folder, Paths.get(rootFolder));
+                            Path newCbz = processFolderAndCreateCBZ(folder, Paths.get(rootFolder), splitMode, 
+                                                                  isJapaneseManga, deleteOriginals,
+                                                                  skipImagesFromStart, skipImagesFromEnd,
+                                                                  rotateWideImages);
                             if (newCbz != null) {
                                 newlyCreatedCbzFiles.add(newCbz);
                             }
@@ -61,22 +243,20 @@ public class MangaPagesSplitter {
                             System.err.println("Error processing folder: " + folder + " - " + e.getMessage());
                         }
                     });
-
-            // Step 3: Delete original archive files (except newly created ones)
-            for (Path archivePath : originalArchives) {
-                // Skip if this is one of our newly created CBZ files
-                if (newlyCreatedCbzFiles.contains(archivePath)) {
-                    System.out.println("Preserving newly created CBZ: " + archivePath.getFileName());
-                    continue;
-                }
-
-                try {
-                    Files.delete(archivePath);
-                    System.out.println("Deleted original archive: " + archivePath.getFileName());
-                } catch (IOException e) {
-                    System.err.println("Error deleting archive: " + archivePath + " - " + e.getMessage());
+                    
+            // Delete original archives if needed
+            if (deleteOriginals) {
+                for (Path archive : originalArchives) {
+                    try {
+                        Files.delete(archive);
+                        System.out.println("Deleted original archive: " + archive.getFileName());
+                    } catch (IOException e) {
+                        System.err.println("Error deleting archive: " + archive + " - " + e.getMessage());
+                    }
                 }
             }
+
+            // Rest of the method remains unchanged
         } catch (IOException e) {
             System.err.println("Error during processing: " + e.getMessage());
             e.printStackTrace();
@@ -154,7 +334,9 @@ public class MangaPagesSplitter {
         }
     }
 
-    private static Path processFolderAndCreateCBZ(Path folder, Path rootFolder) throws IOException {
+    private static Path processFolderAndCreateCBZ(Path folder, Path rootFolder, int splitMode, boolean isJapaneseManga, 
+                                                boolean deleteOriginals, int skipImagesFromStart, int skipImagesFromEnd,
+                                                boolean rotateWideImages) throws IOException {
         System.out.println("Processing folder: " + folder);
 
         List<Path> imagePaths = new ArrayList<>();
@@ -162,30 +344,84 @@ public class MangaPagesSplitter {
 
         // Find all image files
         Files.walk(folder)
-            .filter(Files::isRegularFile)
-            .filter(path -> isImageFile(path.toString()))
-            .forEach(imagePaths::add);
+                .filter(Files::isRegularFile)
+                .filter(path -> isImageFile(path.toString()))
+                .forEach(imagePaths::add);
 
         if (imagePaths.isEmpty()) {
             System.out.println("No images found in: " + folder);
             return null;
         }
+        
+        int totalImages = imagePaths.size();
+        System.out.println("Found " + totalImages + " images in " + folder.getFileName());
+        
+        // Calculate which images to actually process with exceptions
+        int firstImageToProcess = Math.min(skipImagesFromStart, totalImages);
+        int lastImageToProcess = Math.max(0, totalImages - skipImagesFromEnd);
 
         // Process each image
-        for (Path imagePath : imagePaths) {
-            if (splitImage(imagePath.toFile())) {
-                String baseName = imagePath.getFileName().toString();
-                baseName = baseName.substring(0, baseName.lastIndexOf('.'));
-                String ext = imagePath.toString().substring(imagePath.toString().lastIndexOf('.'));
+        for (int i = 0; i < imagePaths.size(); i++) {
+            Path imagePath = imagePaths.get(i);
+            boolean shouldSplit = false;
+            boolean isWideImage = false;
+            
+            // Check if this image should be skipped based on position
+            boolean isExceptionImage = (i < firstImageToProcess) || (i >= lastImageToProcess);
+            
+            // Check if the image is wide (width > height)
+            try {
+                BufferedImage img = ImageIO.read(imagePath.toFile());
+                if (img != null) {
+                    int width = img.getWidth();
+                    int height = img.getHeight();
+                    isWideImage = width > height;
+                    
+                    // Determine if this image should be split based on mode, dimensions, and exceptions
+                    if (splitMode == 2 && !isExceptionImage) {
+                        shouldSplit = true;
+                    }
+                    else if (splitMode == 0 && !isExceptionImage) {
+                        shouldSplit = isWideImage;
+                        if (shouldSplit) {
+                            System.out.println("Auto-detected double page for: " + imagePath.getFileName());
+                        }
+                    }
+                    
+                    // Apply rotation for wide images if requested and not splitting
+                    if (rotateWideImages && isWideImage && !shouldSplit) {
+                        if (rotateImage(imagePath.toFile(), 90)) {
+                            System.out.println("Rotated wide image: " + imagePath.getFileName());
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                System.err.println("Error processing image: " + imagePath + " - " + e.getMessage());
+            }
+            
+            if (isExceptionImage && (splitMode == 0 || splitMode == 2)) {
+                System.out.println("Skipping split for exception image: " + imagePath.getFileName());
+            }
 
-                Path rightPage = imagePath.resolveSibling(baseName + "_1" + ext);
-                Path leftPage = imagePath.resolveSibling(baseName + "_2" + ext);
+            if (shouldSplit) {
+                if (splitImage(imagePath.toFile(), isJapaneseManga)) {
+                    String baseName = imagePath.getFileName().toString();
+                    baseName = baseName.substring(0, baseName.lastIndexOf('.'));
+                    String ext = imagePath.toString().substring(imagePath.toString().lastIndexOf('.'));
 
-                processedFiles.add(rightPage);
-                processedFiles.add(leftPage);
+                    Path firstPage = imagePath.resolveSibling(baseName + "_1" + ext);
+                    Path secondPage = imagePath.resolveSibling(baseName + "_2" + ext);
 
-                // Delete original file
-                Files.delete(imagePath);
+                    processedFiles.add(firstPage);
+                    processedFiles.add(secondPage);
+
+                    // Delete original file only if requested
+                    if (deleteOriginals) {
+                        Files.delete(imagePath);
+                    }
+                }
+            } else {
+                processedFiles.add(imagePath);
             }
         }
 
@@ -197,8 +433,11 @@ public class MangaPagesSplitter {
 
             createCBZ(processedFiles, finalPath.toFile());
 
-            // Delete the processed folder
-            deleteDirectory(folder);
+            // Delete the processed folder only if requested
+            if (deleteOriginals) {
+                deleteDirectory(folder);
+                System.out.println("Deleted processed folder: " + folder.getFileName());
+            }
 
             System.out.println("Created CBZ: " + finalPath.getFileName());
             return finalPath;
@@ -206,8 +445,48 @@ public class MangaPagesSplitter {
 
         return null;
     }
+    
+    private static boolean rotateImage(File imageFile, int degrees) {
+        try {
+            BufferedImage originalImage = ImageIO.read(imageFile);
+            if (originalImage == null) {
+                System.err.println("Could not read image for rotation: " + imageFile);
+                return false;
+            }
+            
+            // Calculate the new dimensions for the rotated image
+            int width = originalImage.getWidth();
+            int height = originalImage.getHeight();
+            
+            // Create a new rotated image
+            BufferedImage rotatedImage = new BufferedImage(height, width, originalImage.getType());
+            
+            // Create the rotation transformation
+            AffineTransform rotation = new AffineTransform();
+            rotation.translate(height, 0);
+            rotation.rotate(Math.toRadians(degrees));
+            
+            // Apply the transformation
+            Graphics2D g2d = rotatedImage.createGraphics();
+            g2d.setTransform(rotation);
+            g2d.drawImage(originalImage, 0, 0, null);
+            g2d.dispose();
+            
+            // Get file extension
+            String fileName = imageFile.getName();
+            String extension = fileName.substring(fileName.lastIndexOf('.') + 1);
+            
+            // Save the rotated image over the original
+            ImageIO.write(rotatedImage, extension, imageFile);
+            
+            return true;
+        } catch (IOException e) {
+            System.err.println("Error rotating image " + imageFile + ": " + e.getMessage());
+            return false;
+        }
+    }
 
-    private static boolean splitImage(File imageFile) {
+    private static boolean splitImage(File imageFile, boolean isJapaneseManga) {
         try {
             BufferedImage originalImage = ImageIO.read(imageFile);
             if (originalImage == null) {
@@ -217,28 +496,46 @@ public class MangaPagesSplitter {
 
             int width = originalImage.getWidth();
             int height = originalImage.getHeight();
-            int halfWidth = width / 2;
 
-            // Create right half image (page 1)
-            BufferedImage rightHalf = originalImage.getSubimage(0, 0, halfWidth, height);
             String fileName = imageFile.getName();
             String baseName = fileName.substring(0, fileName.lastIndexOf('.'));
             String extension = fileName.substring(fileName.lastIndexOf('.') + 1);
 
-            File rightFile = new File(imageFile.getParent(), baseName + "_1." + extension);
-            ImageIO.write(rightHalf, extension, rightFile);
+            // For Japanese manga, right half is first (_1)
+            // For Western style, left half is first (_1)
+            BufferedImage firstHalf, secondHalf;
 
-            // Create left half image (page 2)
-            BufferedImage leftHalf = originalImage.getSubimage(halfWidth, 0, width - halfWidth, height);
-            File leftFile = new File(imageFile.getParent(), baseName + "_2." + extension);
-            ImageIO.write(leftHalf, extension, leftFile);
+            if (isJapaneseManga) {
+                // Japanese manga: right half is read first
+                firstHalf = getRightHalf(originalImage, width, height);
+                secondHalf = getLeftHalf(originalImage, width, height);
+                System.out.println("Split image for Japanese manga (right to left): " + imageFile.getName());
+            } else {
+                // Western style: left half is read first
+                firstHalf = getLeftHalf(originalImage, width, height);
+                secondHalf = getRightHalf(originalImage, width, height);
+                System.out.println("Split image for Western style (left to right): " + imageFile.getName());
+            }
 
-            System.out.println("Split image: " + imageFile.getName());
+            File firstFile = new File(imageFile.getParent(), baseName + "_1." + extension);
+            ImageIO.write(firstHalf, extension, firstFile);
+
+            File secondFile = new File(imageFile.getParent(), baseName + "_2." + extension);
+            ImageIO.write(secondHalf, extension, secondFile);
+
             return true;
         } catch (IOException e) {
             System.err.println("Error splitting image " + imageFile + ": " + e.getMessage());
             return false;
         }
+    }
+
+    private static BufferedImage getLeftHalf(BufferedImage originalImage, int width, int height) {
+        return originalImage.getSubimage(0, 0, width/2, height);
+    }
+
+    private static BufferedImage getRightHalf(BufferedImage originalImage, int width, int height) {
+        return originalImage.getSubimage(width/2, 0, width - width/2, height);
     }
 
     private static void createCBZ(List<Path> imageFiles, File outputCBZ) throws IOException {
