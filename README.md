@@ -1,5 +1,7 @@
 # MangaPagesSplitter
-Transform a manga with 2 pages per image, into a manga with only one page per image. Except if you want to keep the double-page spread format, then it is OK, you can simply batch create CBZ files, maybe rotate the images so you can read them in landscape mode etc.
+Transform a manga with 2 pages per image, into a manga with only one page per image.
+Except if you want to keep the double-page spread format, then it is OK, you can simply batch create CBZ files, maybe rotate the images so you can read them in landscape mode etc.
+
 This tool allows you to process transformations on your comics or mangas in batch, so you can read them more easily on your smartphone or tablet.
 
 ### Problem:
