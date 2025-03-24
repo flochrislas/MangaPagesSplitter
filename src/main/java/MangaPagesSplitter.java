@@ -31,10 +31,11 @@ public class MangaPagesSplitter {
     }
     
     // Method to be called from the UI - pass the UI instance instead of worker
+    // Updated method signature to include outputFormat
     public static void processWithUI(
             String rootFolder, int splitMode, boolean isJapaneseManga, boolean deleteOriginals,
             int skipImagesFromStart, int skipImagesFromEnd, boolean rotateWideImages, 
-            MangaPagesSplitterUI uiInstance) throws IOException {
+            String outputFormat, MangaPagesSplitterUI uiInstance) throws IOException {
         
         ui = uiInstance;
         
@@ -55,8 +56,8 @@ public class MangaPagesSplitter {
                 logMessage("Error counting folders: " + e.getMessage());
             }
             
-            // Step 2: Process each folder and track new CBZ files
-            List<Path> newlyCreatedCbzFiles = new ArrayList<>();
+            // Step 2: Process each folder and track new output files
+            List<Path> newlyCreatedOutputFiles = new ArrayList<>();
             final long totalFolders = folderCount;
             final int[] processedFolders = {0};
             
@@ -74,13 +75,13 @@ public class MangaPagesSplitter {
                                               (int)((processedFolders[0] * 100) / totalFolders));
                             }
                             
-                            Path newCbz = processFolderAndCreateCBZ(folder, Paths.get(rootFolder), splitMode, 
+                            Path newOutputPath = processFolderAndCreateOutput(folder, Paths.get(rootFolder), splitMode, 
                                                                   isJapaneseManga, deleteOriginals,
                                                                   skipImagesFromStart, skipImagesFromEnd,
-                                                                  rotateWideImages);
-                            if (newCbz != null) {
-                                newlyCreatedCbzFiles.add(newCbz);
-                                logMessage("Created: " + newCbz.getFileName());
+                                                                  rotateWideImages, outputFormat);
+                            if (newOutputPath != null) {
+                                newlyCreatedOutputFiles.add(newOutputPath);
+                                logMessage("Created: " + newOutputPath.getFileName());
                             }
                             
                             processedFolders[0]++;
@@ -111,7 +112,8 @@ public class MangaPagesSplitter {
             }
 
             updateProgress("Complete", 100);
-            logMessage("Created " + newlyCreatedCbzFiles.size() + " CBZ files");
+            String outputType = outputFormat.equals("folder") ? "folders" : outputFormat.toUpperCase() + " files";
+            logMessage("Created " + newlyCreatedOutputFiles.size() + " " + outputType);
             
         } catch (IOException e) {
             logMessage("Error during processing: " + e.getMessage());
@@ -237,9 +239,10 @@ public class MangaPagesSplitter {
         }
     }
 
-    private static Path processFolderAndCreateCBZ(Path folder, Path rootFolder, int splitMode, boolean isJapaneseManga, 
+    // Renamed method to reflect that it handles different output formats now
+    private static Path processFolderAndCreateOutput(Path folder, Path rootFolder, int splitMode, boolean isJapaneseManga, 
                                                 boolean deleteOriginals, int skipImagesFromStart, int skipImagesFromEnd,
-                                                boolean rotateWideImages) throws IOException {
+                                                boolean rotateWideImages, String outputFormat) throws IOException {
         logMessage("Processing folder: " + folder);
 
         List<Path> imagePaths = new ArrayList<>();
@@ -348,20 +351,49 @@ public class MangaPagesSplitter {
         }
 
         if (!processedFiles.isEmpty()) {
-            // Create CBZ file with original name
+            // Create output based on selected format
             String folderName = folder.getFileName().toString();
-            String cbzName = folderName + ".cbz";
-            Path finalPath = rootFolder.resolve(cbzName);
-
-            logMessage("Creating CBZ: " + finalPath.getFileName());
-            createCBZ(processedFiles, finalPath.toFile());
-
+            Path finalPath;
+            
+            // Create the appropriate output based on format
+            if (outputFormat.equals("folder")) {
+                // For folder format, create a dedicated output folder
+                finalPath = rootFolder.resolve(folderName + "_processed");
+                Files.createDirectories(finalPath);
+                
+                // Copy all processed files to the output folder
+                for (Path file : processedFiles) {
+                    Path targetFile = finalPath.resolve(file.getFileName());
+                    Files.copy(file, targetFile, StandardCopyOption.REPLACE_EXISTING);
+                }
+                
+                logMessage("Created output folder: " + finalPath.getFileName());
+            } else {
+                // For archive formats
+                String extension = "." + outputFormat;
+                String outputName = folderName + extension;
+                finalPath = rootFolder.resolve(outputName);
+                
+                logMessage("Creating " + outputFormat.toUpperCase() + " archive: " + finalPath.getFileName());
+                
+                switch(outputFormat) {
+                    case "cbz":
+                    case "zip":
+                        createZipArchive(processedFiles, finalPath.toFile());
+                        break;
+                    case "cbr":
+                    case "rar":
+                        createRarArchive(processedFiles, finalPath.toFile());
+                        break;
+                }
+            }
+            
             // Delete the processed folder only if requested
             if (deleteOriginals) {
                 deleteDirectory(folder);
                 logMessage("Deleted processed folder: " + folder.getFileName());
             }
-
+            
             return finalPath;
         }
 
@@ -460,10 +492,11 @@ public class MangaPagesSplitter {
         return originalImage.getSubimage(width/2, 0, width - width/2, height);
     }
 
-    private static void createCBZ(List<Path> imageFiles, File outputCBZ) throws IOException {
-        System.out.println("Creating CBZ: " + outputCBZ);
+    // Renamed to be more specific
+    private static void createZipArchive(List<Path> imageFiles, File outputFile) throws IOException {
+        System.out.println("Creating ZIP/CBZ: " + outputFile);
 
-        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(outputCBZ))) {
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(outputFile))) {
             byte[] buffer = new byte[1024];
 
             for (Path file : imageFiles) {
@@ -479,6 +512,80 @@ public class MangaPagesSplitter {
                 zos.closeEntry();
             }
         }
+    }
+    
+    // New method for creating RAR archives
+    private static void createRarArchive(List<Path> imageFiles, File outputFile) throws IOException {
+        System.out.println("Creating RAR/CBR: " + outputFile);
+
+        // Since Java doesn't have built-in RAR creation, try to use external tools
+        boolean success = createRarWithExternalProgram(imageFiles, outputFile);
+        
+        if (!success) {
+            // Fallback - create ZIP instead but rename it to the requested extension
+            logMessage("WARNING: Could not create RAR/CBR file. No RAR program found. Creating ZIP instead.");
+            
+            // Create temporary zip file
+            File tempZip = new File(outputFile.getParentFile(), outputFile.getName() + ".zip.tmp");
+            createZipArchive(imageFiles, tempZip);
+            
+            // Rename to requested extension
+            if (tempZip.exists()) {
+                if (outputFile.exists()) {
+                    outputFile.delete();
+                }
+                tempZip.renameTo(outputFile);
+            }
+        }
+    }
+    
+    // New method to create RAR files using external RAR tools
+    private static boolean createRarWithExternalProgram(List<Path> imageFiles, File outputFile) {
+        // Try WinRAR paths
+        String[] winRarPaths = {
+            "C:\\Program Files\\WinRAR\\WinRAR.exe",
+            "C:\\Program Files (x86)\\WinRAR\\WinRAR.exe",
+            "/usr/bin/rar",
+            "/usr/local/bin/rar"
+        };
+        
+        for (String winRarPath : winRarPaths) {
+            File winRar = new File(winRarPath);
+            if (winRar.exists()) {
+                try {
+                    // Create a temporary file with list of files to add
+                    File tempListFile = File.createTempFile("rarlist", ".txt");
+                    try (PrintWriter writer = new PrintWriter(tempListFile)) {
+                        for (Path file : imageFiles) {
+                            writer.println(file.toAbsolutePath());
+                        }
+                    }
+                    
+                    // Build command for WinRAR
+                    // WinRAR a -ep output.rar @filelist.txt
+                    ProcessBuilder pb = new ProcessBuilder(
+                        winRarPath, "a", "-ep", outputFile.getAbsolutePath(), "@" + tempListFile.getAbsolutePath()
+                    );
+                    
+                    Process process = pb.start();
+                    int exitCode = process.waitFor();
+                    
+                    // Clean up temp file
+                    tempListFile.delete();
+                    
+                    if (exitCode == 0) {
+                        logMessage("Successfully created RAR file with " + new File(winRarPath).getName());
+                        return true;
+                    } else {
+                        logMessage("Failed to create RAR file - exit code: " + exitCode);
+                    }
+                } catch (Exception e) {
+                    logMessage("Error creating RAR file: " + e.getMessage());
+                }
+            }
+        }
+        
+        return false;
     }
 
     private static void deleteDirectory(Path directory) throws IOException {

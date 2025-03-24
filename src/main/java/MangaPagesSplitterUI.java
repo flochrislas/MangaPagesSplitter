@@ -3,6 +3,7 @@ import javax.swing.border.*;
 import java.awt.*;
 import javax.swing.event.ChangeListener;
 import java.awt.event.*;
+import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.concurrent.ExecutionException;
@@ -18,8 +19,11 @@ public class MangaPagesSplitterUI extends JFrame {
     private JSpinner skipStartSpinner, skipEndSpinner;
     private JCheckBox rotateWideImagesCheckbox;
     
+    // Output format selection
+    private JRadioButton cbzFormatRadio, cbrFormatRadio, zipFormatRadio, rarFormatRadio, folderFormatRadio;
+    
     // UI components for feedback
-    private JTextPane previewPane;
+    private JTextPane inputFilesPane; // Changed from previewPane
     private JTextArea logArea;
     private JProgressBar progressBar;
     private JButton startButton;
@@ -35,6 +39,7 @@ public class MangaPagesSplitterUI extends JFrame {
     private int skipImagesFromEnd = 0;
     private boolean rotateWideImages = false;
     private String rootFolder = "";
+    private String outputFormat = "cbz"; // Default output format
     
     public MangaPagesSplitterUI() {
         setTitle("Manga Pages Splitter");
@@ -56,8 +61,8 @@ public class MangaPagesSplitterUI extends JFrame {
         
         // Splitting options
         ButtonGroup splitGroup = new ButtonGroup();
-        autoDetectRadio = new JRadioButton("Detect automatically for each manga", true);
-        keepOriginalRadio = new JRadioButton("Keep original images");
+        autoDetectRadio = new JRadioButton("Only split wide images (smart)", true);
+        keepOriginalRadio = new JRadioButton("No split at all");
         splitAllRadio = new JRadioButton("Split all images in half");
         splitGroup.add(autoDetectRadio);
         splitGroup.add(keepOriginalRadio);
@@ -78,19 +83,32 @@ public class MangaPagesSplitterUI extends JFrame {
         skipEndSpinner.setEnabled(false);
         
         // Rotation option
-        rotateWideImagesCheckbox = new JCheckBox("Rotate wide images (width > height) 90° clockwise");
+        rotateWideImagesCheckbox = new JCheckBox("Rotate wide images 90° clockwise");
         
         // File deletion options
         ButtonGroup deletionGroup = new ButtonGroup();
-        keepFilesRadio = new JRadioButton("Keep original files", true);
-        deleteFilesRadio = new JRadioButton("Delete original files after processing");
+        keepFilesRadio = new JRadioButton("Keep input files", true);
+        deleteFilesRadio = new JRadioButton("Delete input files after processing");
         deletionGroup.add(keepFilesRadio);
         deletionGroup.add(deleteFilesRadio);
         
-        // Preview pane
-        previewPane = new JTextPane();
-        previewPane.setEditable(false);
-        previewPane.setContentType("text/html");
+        // Output format options
+        ButtonGroup formatGroup = new ButtonGroup();
+        cbzFormatRadio = new JRadioButton("CBZ (Comic Book ZIP)", true);
+        cbrFormatRadio = new JRadioButton("CBR (Comic Book RAR)");
+        zipFormatRadio = new JRadioButton("ZIP archive");
+        rarFormatRadio = new JRadioButton("RAR archive");
+        folderFormatRadio = new JRadioButton("Folder with images (no archive)");
+        formatGroup.add(cbzFormatRadio);
+        formatGroup.add(cbrFormatRadio);
+        formatGroup.add(zipFormatRadio);
+        formatGroup.add(rarFormatRadio);
+        formatGroup.add(folderFormatRadio);
+        
+        // Preview pane renamed to input files pane
+        inputFilesPane = new JTextPane();
+        inputFilesPane.setEditable(false);
+        inputFilesPane.setContentType("text/html");
         
         // Log area
         logArea = new JTextArea();
@@ -114,7 +132,7 @@ public class MangaPagesSplitterUI extends JFrame {
         // North panel: root folder selection
         JPanel northPanel = new JPanel(new BorderLayout(5, 0));
         JPanel folderPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        folderPanel.add(new JLabel("Root Folder:"));
+        folderPanel.add(new JLabel("Input files location:"));
         folderPanel.add(rootFolderField);
         folderPanel.add(browseButton);
         northPanel.add(folderPanel, BorderLayout.CENTER);
@@ -193,25 +211,43 @@ public class MangaPagesSplitterUI extends JFrame {
         deletionPanel.add(keepFilesRadio);
         deletionPanel.add(deleteFilesRadio);
         westPanel.add(deletionPanel);
+        westPanel.add(Box.createRigidArea(new Dimension(0, 8)));
+        
+        // Panel for output format - moved to be the last panel
+        JPanel outputFormatPanel = createSectionPanel("Output Format", 280, 139);
+        outputFormatPanel.setLayout(new BoxLayout(outputFormatPanel, BoxLayout.Y_AXIS));
+        
+        cbzFormatRadio.setAlignmentX(LEFT_ALIGNMENT);
+        cbrFormatRadio.setAlignmentX(LEFT_ALIGNMENT);
+        zipFormatRadio.setAlignmentX(LEFT_ALIGNMENT);
+        rarFormatRadio.setAlignmentX(LEFT_ALIGNMENT);
+        folderFormatRadio.setAlignmentX(LEFT_ALIGNMENT);
+        
+        outputFormatPanel.add(cbzFormatRadio);
+        outputFormatPanel.add(cbrFormatRadio);
+        outputFormatPanel.add(zipFormatRadio);
+        outputFormatPanel.add(rarFormatRadio);
+        outputFormatPanel.add(folderFormatRadio);
+        westPanel.add(outputFormatPanel);
         
         add(westPanel, BorderLayout.WEST);
         
-        // Center panel: preview and log
+        // Center panel: input files and log
         JPanel centerPanel = new JPanel(new BorderLayout());
         
-        // Preview section
-        JPanel previewPanel = createSectionPanel("Preview of Actions", 400, 200);
-        previewPanel.setLayout(new BorderLayout());
-        previewPanel.add(new JScrollPane(previewPane), BorderLayout.CENTER);
-        previewPanel.setPreferredSize(new Dimension(400, 200));
+        // Input files section (renamed from Preview)
+        JPanel inputFilesPanel = createSectionPanel("Input Files", 400, 200);
+        inputFilesPanel.setLayout(new BorderLayout());
+        inputFilesPanel.add(new JScrollPane(inputFilesPane), BorderLayout.CENTER);
+        inputFilesPanel.setPreferredSize(new Dimension(400, 200));
         
-        // Log section
-        JPanel logPanel = createSectionPanel("Processing Log", 400, 300);
+        // Process section (renamed from Processing Log)
+        JPanel logPanel = createSectionPanel("Process", 400, 300);
         logPanel.setLayout(new BorderLayout());
         JScrollPane logScrollPane = new JScrollPane(logArea);
         logPanel.add(logScrollPane, BorderLayout.CENTER);
         
-        JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, previewPanel, logPanel);
+        JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, inputFilesPanel, logPanel);
         splitPane.setResizeWeight(0.3);
         centerPanel.add(splitPane, BorderLayout.CENTER);
         
@@ -264,7 +300,7 @@ public class MangaPagesSplitterUI extends JFrame {
     }
     
     private void wireEvents() {
-        // Folder selection
+        // Folder selection - update to refresh input files panel
         browseButton.addActionListener(e -> {
             JFileChooser chooser = new JFileChooser();
             chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
@@ -273,7 +309,8 @@ public class MangaPagesSplitterUI extends JFrame {
             if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
                 rootFolder = chooser.getSelectedFile().getAbsolutePath();
                 rootFolderField.setText(rootFolder);
-                updatePreview();
+                updateInputFilesPane(); // Show files in folder
+                updatePreview();        // Update preview text in log area
             }
         });
         
@@ -281,22 +318,20 @@ public class MangaPagesSplitterUI extends JFrame {
         ActionListener splitListener = e -> {
             if (autoDetectRadio.isSelected()) {
                 splitMode = 0;
-                japaneseRadio.setEnabled(true);
-                westernRadio.setEnabled(true);
-                skipImagesCheckbox.setEnabled(true);
-                rotateWideImagesCheckbox.setEnabled(true);
+                setDirectionPanelEnabled(true);
+                setExceptionsPanelEnabled(true);
+                setRotationPanelEnabled(true);
             } else if (keepOriginalRadio.isSelected()) {
                 splitMode = 1;
-                japaneseRadio.setEnabled(false);
-                westernRadio.setEnabled(false);
-                skipImagesCheckbox.setEnabled(false);
-                rotateWideImagesCheckbox.setEnabled(true);
+                setDirectionPanelEnabled(false);
+                setExceptionsPanelEnabled(false);
+                setRotationPanelEnabled(true);
             } else if (splitAllRadio.isSelected()) {
                 splitMode = 2;
-                japaneseRadio.setEnabled(true);
-                westernRadio.setEnabled(true);
-                skipImagesCheckbox.setEnabled(true);
-                rotateWideImagesCheckbox.setEnabled(false);
+                setDirectionPanelEnabled(true);
+                setExceptionsPanelEnabled(true);
+                // Only enable rotation if we have exceptions
+                setRotationPanelEnabled(skipImagesCheckbox.isSelected());
             }
             updatePreview();
         };
@@ -319,8 +354,13 @@ public class MangaPagesSplitterUI extends JFrame {
         // Skip images checkbox
         skipImagesCheckbox.addActionListener(e -> {
             boolean enabled = skipImagesCheckbox.isSelected();
-            skipStartSpinner.setEnabled(enabled);
-            skipEndSpinner.setEnabled(enabled);
+            updateSkipComponentsEnabled(enabled);
+            
+            // If in "split all" mode, enable/disable rotation based on skip checkbox
+            if (splitAllRadio.isSelected()) {
+                setRotationPanelEnabled(enabled);
+            }
+            
             updatePreview();
         });
         
@@ -353,7 +393,29 @@ public class MangaPagesSplitterUI extends JFrame {
             updatePreview();
         });
         
-        // Start button
+        // Output format selection
+        ActionListener formatListener = e -> {
+            if (cbzFormatRadio.isSelected()) {
+                outputFormat = "cbz";
+            } else if (cbrFormatRadio.isSelected()) {
+                outputFormat = "cbr";
+            } else if (zipFormatRadio.isSelected()) {
+                outputFormat = "zip";
+            } else if (rarFormatRadio.isSelected()) {
+                outputFormat = "rar";
+            } else if (folderFormatRadio.isSelected()) {
+                outputFormat = "folder";
+            }
+            updatePreview();
+        };
+        
+        cbzFormatRadio.addActionListener(formatListener);
+        cbrFormatRadio.addActionListener(formatListener);
+        zipFormatRadio.addActionListener(formatListener);
+        rarFormatRadio.addActionListener(formatListener);
+        folderFormatRadio.addActionListener(formatListener);
+        
+        // Start button - update to clear preview text and show only logs
         startButton.addActionListener(e -> {
             if (rootFolder.isEmpty()) {
                 JOptionPane.showMessageDialog(this,
@@ -363,6 +425,7 @@ public class MangaPagesSplitterUI extends JFrame {
                 return;
             }
             
+            clearLog(); // Clear log area including preview text
             startProcessing();
         });
         
@@ -376,92 +439,245 @@ public class MangaPagesSplitterUI extends JFrame {
         });
     }
     
-    private void updatePreview() {
+    /**
+     * Updates the enabled state of skip spinners and their labels
+     * 
+     * @param enabled Whether the components should be enabled
+     */
+    private void updateSkipComponentsEnabled(boolean enabled) {
+        skipStartSpinner.setEnabled(enabled);
+        skipEndSpinner.setEnabled(enabled);
+        
+        // Update the labels in the spinner panels
+        Container parent = skipImagesCheckbox.getParent();
+        if (parent instanceof JPanel) {
+            // Find the spinner panels and update their labels
+            for (Component comp : parent.getComponents()) {
+                if (comp instanceof JPanel) {
+                    // This is one of our spinner panels
+                    JPanel spinnerPanel = (JPanel) comp;
+                    for (Component spinnerComponent : spinnerPanel.getComponents()) {
+                        if (spinnerComponent instanceof JLabel) {
+                            spinnerComponent.setEnabled(enabled);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Updates the input files pane with the content of the root folder
+     * showing archives and folders that will be processed in green
+     */
+    private void updateInputFilesPane() {
+        if (rootFolder.isEmpty()) {
+            inputFilesPane.setText("<html><body style='font-family: Arial; font-size: 12pt; text-align: left;'>" +
+                                  "<i>No folder selected</i></body></html>");
+            return;
+        }
+        
         StringBuilder html = new StringBuilder();
-        html.append("<html><body style='font-family: Arial; font-size: 12pt'>");
-        html.append("<h3>Processing Preview</h3>");
+        html.append("<html><body style='font-family: Arial; font-size: 12pt; text-align: left;'>");
+        
+        try {
+            File folder = new File(rootFolder);
+            File[] files = folder.listFiles();
+            
+            if (files == null || files.length == 0) {
+                html.append("<div style='text-align: left;'><i>Folder is empty</i></div>");
+            } else {
+                // Sort files - directories first, then archives, then other files
+                java.util.Arrays.sort(files, (f1, f2) -> {
+                    boolean isDir1 = f1.isDirectory();
+                    boolean isDir2 = f2.isDirectory();
+                    boolean isArchive1 = isArchiveFile(f1.getPath());
+                    boolean isArchive2 = isArchiveFile(f2.getPath());
+                    
+                    if (isDir1 && !isDir2) return -1;
+                    if (!isDir1 && isDir2) return 1;
+                    if (isArchive1 && !isArchive2) return -1;
+                    if (!isArchive1 && isArchive2) return 1;
+                    return f1.getName().compareToIgnoreCase(f2.getName());
+                });
+                
+                html.append("<div style='text-align: left;'>");
+                
+                for (File file : files) {
+                    String fileName = file.getName();
+                    boolean isArchive = isArchiveFile(file.getPath());
+                    boolean isDirectory = file.isDirectory();
+                    
+                    html.append("<div style='margin: 3px 0;'>");
+                    
+                    // Files to process are shown in green
+                    if (isArchive || isDirectory) {
+                        html.append("<span style='color: green;'>");
+                        
+                        if (isArchive) {
+                            html.append("📦 "); // Archive icon
+                        } else {
+                            html.append("📁 "); // Folder icon
+                        }
+                        
+                        html.append("<b>").append(fileName).append("</b>");
+                        
+                        if (isArchive) {
+                            html.append(" (Archive)");
+                        }
+                        html.append("</span>");
+                    } else {
+                        // Files not to process are shown in gray
+                        html.append("<span style='color: gray;'>");
+                        html.append("📄 ").append(fileName);
+                        html.append("</span>");
+                    }
+                    
+                    html.append("</div>");
+                }
+                
+                html.append("</div>");
+            }
+        } catch (Exception e) {
+            html.append("<div style='text-align: left; color: red;'>Error reading folder: ").append(e.getMessage()).append("</div>");
+        }
+        
+        html.append("</body></html>");
+        inputFilesPane.setText(html.toString());
+    }
+
+    /**
+     * Checks if a file is an archive (zip, cbz, rar, cbr)
+     */
+    private boolean isArchiveFile(String filePath) {
+        String lowerPath = filePath.toLowerCase();
+        return lowerPath.endsWith(".zip") || lowerPath.endsWith(".cbz") || 
+               lowerPath.endsWith(".rar") || lowerPath.endsWith(".cbr");
+    }
+
+    private void updatePreview() {
+        StringBuilder text = new StringBuilder();
+        text.append("=== PROCESSING PREVIEW ===\n\n");
         
         // Root folder info
         if (rootFolder.isEmpty()) {
-            html.append("<p><b>Folder:</b> <span style='color: red'>No folder selected</span></p>");
+            text.append("Folder: No folder selected\n");
         } else {
-            html.append("<p><b>Folder:</b> ").append(rootFolder).append("</p>");
+            text.append("Folder: " + rootFolder + "\n");
         }
         
         // Splitting mode
-        html.append("<p><b>Splitting:</b> ");
+        text.append("Splitting: ");
         switch (splitMode) {
             case 0:
-                html.append("Auto-detect double pages</p>");
+                text.append("Auto-detect double pages\n");
                 break;
             case 1:
-                html.append("Keep all images original</p>");
+                text.append("Keep all images original\n");
                 break;
             case 2:
-                html.append("Split all images in half</p>");
+                text.append("Split all images in half\n");
                 break;
         }
         
         // Reading direction (if applicable)
         if (splitMode == 0 || splitMode == 2) {
-            html.append("<p><b>Reading direction:</b> ");
-            html.append(isJapaneseManga ? 
+            text.append("Reading direction: ");
+            text.append(isJapaneseManga ? 
                 "Japanese style (right to left)" : 
                 "Western style (left to right)");
-            html.append("</p>");
+            text.append("\n");
         }
         
         // Exception images
         if ((splitMode == 0 || splitMode == 2) && skipImagesCheckbox.isSelected()) {
-            html.append("<p><b>Page exceptions:</b> Skip splitting the first ").append(skipImagesFromStart);
-            html.append(" and the last ").append(skipImagesFromEnd);
-            html.append(" images of each manga</p>");
+            text.append("Page exceptions: Skip splitting the first ").append(skipImagesFromStart);
+            text.append(" and the last ").append(skipImagesFromEnd);
+            text.append(" images of each manga\n");
         }
         
         // Rotation info
-        if (rotateWideImages && splitMode != 2) {
-            html.append("<p><b>Image rotation:</b> Wide images will be rotated 90° clockwise</p>");
+        if (rotateWideImages && (splitMode != 2 || 
+            (splitMode == 2 && skipImagesCheckbox.isSelected()))) {
+            text.append("Image rotation: Wide images will be rotated 90° clockwise\n");
         }
+        
+        // Output format
+        text.append("Output format: ");
+        switch (outputFormat) {
+            case "cbz":
+                text.append("CBZ (Comic Book ZIP)");
+                break;
+            case "cbr":
+                text.append("CBR (Comic Book RAR)");
+                break;
+            case "zip":
+                text.append("ZIP archive");
+                break;
+            case "rar":
+                text.append("RAR archive");
+                break;
+            case "folder":
+                text.append("Folder with images (no archive)");
+                break;
+        }
+        text.append("\n");
         
         // File handling
-        html.append("<p><b>Input Files handling:</b> ");
+        text.append("Input Files handling: ");
         if (deleteOriginals) {
-            html.append("<span style='color: #AA0000'>Original files will be deleted after processing</span>");
+            text.append("Original files will be DELETED after processing");
         } else {
-            html.append("Original files will be kept");
+            text.append("Original files will be kept");
         }
-        html.append("</p>");
+        text.append("\n\n");
         
         // What will happen
-        html.append("<h3>The program will:</h3>");
-        html.append("<ul>");
-        html.append("<li>Extract all archive files (CBZ, CBR, ZIP, RAR)</li>");
+        text.append("THE PROGRAM WILL:\n");
+        text.append("- Extract all archive files (CBZ, CBR, ZIP, RAR)\n");
         
         if (splitMode == 0) {
-            html.append("<li>Analyze each image and split those that are wider than tall</li>");
+            text.append("- Analyze each image and split those that are wider than tall\n");
         } else if (splitMode == 2) {
-            html.append("<li>Split all images in half</li>");
+            text.append("- Split all images in half\n");
         }
         
         if ((splitMode == 0 || splitMode == 2) && skipImagesCheckbox.isSelected() && 
             (skipImagesFromStart > 0 || skipImagesFromEnd > 0)) {
-            html.append("<li>Skip splitting images at the beginning and end as specified</li>");
+            text.append("- Skip splitting images at the beginning and end as specified\n");
         }
         
-        if (rotateWideImages && splitMode != 2) {
-            html.append("<li>Rotate wide images (width > height) 90° clockwise for better viewing</li>");
+        if (rotateWideImages && (splitMode != 2 || 
+            (splitMode == 2 && skipImagesCheckbox.isSelected()))) {
+            text.append("- Rotate wide images (width > height) 90° clockwise\n");
         }
         
-        html.append("<li>Create new CBZ files for each manga</li>");
+        text.append("- Create new ");
+        switch (outputFormat) {
+            case "cbz":
+                text.append("CBZ files");
+                break;
+            case "cbr":
+                text.append("CBR files");
+                break;
+            case "zip":
+                text.append("ZIP archives");
+                break;
+            case "rar":
+                text.append("RAR archives");
+                break;
+            case "folder":
+                text.append("folders with processed images");
+                break;
+        }
+        text.append(" for each manga\n");
         
         if (deleteOriginals) {
-            html.append("<li>Delete original archive files and extracted folders</li>");
+            text.append("- Delete original archive files and extracted folders\n");
         }
         
-        html.append("</ul>");
-        
-        html.append("</body></html>");
-        previewPane.setText(html.toString());
+        // Show preview in the log area now
+        logArea.setText(text.toString());
     }
     
     // Add method to check if processing is cancelled
@@ -505,15 +721,16 @@ public class MangaPagesSplitterUI extends JFrame {
                         publish("Wide images will be rotated 90° clockwise");
                     }
                     
+                    publish("Output format: " + outputFormat);
                     publish("File handling: " + (deleteOriginals ? "Delete originals" : "Keep originals"));
                     publish("------------------------------");
                     
                     // Call MangaPagesSplitter to do the actual processing
-                    // Pass the UI instance instead of the worker
+                    // Pass the UI instance and output format
                     MangaPagesSplitter.processWithUI(
                         rootFolder, splitMode, isJapaneseManga, deleteOriginals,
                         skipImagesFromStart, skipImagesFromEnd, rotateWideImages, 
-                        MangaPagesSplitterUI.this);
+                        outputFormat, MangaPagesSplitterUI.this);
                     
                 } catch (Exception e) {
                     publish("ERROR: " + e.getMessage());
@@ -576,6 +793,113 @@ public class MangaPagesSplitterUI extends JFrame {
         logArea.setText("");
     }
     
+    /**
+     * Enables or disables the entire reading direction panel including its title
+     * 
+     * @param enabled Whether the panel should be enabled
+     */
+    private void setDirectionPanelEnabled(boolean enabled) {
+        // Enable/disable the radio buttons
+        japaneseRadio.setEnabled(enabled);
+        westernRadio.setEnabled(enabled);
+        
+        // Get the parent panel and update its title color
+        Container parent = japaneseRadio.getParent();
+        if (parent instanceof JPanel) {
+            JPanel panel = (JPanel) parent;
+            TitledBorder border = (TitledBorder) panel.getBorder();
+            border.setTitleColor(enabled ? UIManager.getColor("Label.foreground") : UIManager.getColor("Label.disabledForeground"));
+            panel.repaint(); // Force a repaint to show the color change
+        }
+    }
+
+    /**
+     * Enables or disables the entire exceptions panel including its title
+     * and all child components
+     * 
+     * @param enabled Whether the panel should be enabled
+     */
+    private void setExceptionsPanelEnabled(boolean enabled) {
+        // Enable/disable the checkbox
+        skipImagesCheckbox.setEnabled(enabled);
+        
+        // If panel is disabled, disable all children
+        if (!enabled) {
+            // Get all components in the spinner panels and set their enabled state to false
+            Container parent = skipImagesCheckbox.getParent();
+            if (parent instanceof JPanel) {
+                JPanel panel = (JPanel) parent;
+                
+                // Set the enabled state for all child components
+                for (Component comp : panel.getComponents()) {
+                    if (comp instanceof JPanel) {
+                        // This is one of our spinner panels
+                        JPanel spinnerPanel = (JPanel) comp;
+                        for (Component spinnerComponent : spinnerPanel.getComponents()) {
+                            spinnerComponent.setEnabled(false);
+                        }
+                    }
+                }
+                
+                // Always set spinners enabled state directly to ensure it's correct
+                skipStartSpinner.setEnabled(false);
+                skipEndSpinner.setEnabled(false);
+                
+                // Update border color
+                TitledBorder border = (TitledBorder) panel.getBorder();
+                border.setTitleColor(UIManager.getColor("Label.disabledForeground"));
+                panel.repaint(); // Force a repaint to show the color change
+            }
+        } else {
+            // If panel is enabled, enable checkbox and set spinner state based on checkbox
+            boolean spinnerEnabled = skipImagesCheckbox.isSelected();
+            updateSkipComponentsEnabled(spinnerEnabled);
+            
+            // Update border color
+            Container parent = skipImagesCheckbox.getParent();
+            if (parent instanceof JPanel) {
+                JPanel panel = (JPanel) parent;
+                TitledBorder border = (TitledBorder) panel.getBorder();
+                border.setTitleColor(UIManager.getColor("Label.foreground"));
+                panel.repaint();
+            }
+        }
+    }
+
+    /**
+     * Enables or disables the entire rotation panel including its title
+     * 
+     * @param enabled Whether the panel should be enabled
+     */
+    private void setRotationPanelEnabled(boolean enabled) {
+        // Enable/disable the checkbox
+        rotateWideImagesCheckbox.setEnabled(enabled);
+        
+        // Get the parent panel and update its title color
+        Container parent = rotateWideImagesCheckbox.getParent();
+        if (parent instanceof JPanel) {
+            JPanel panel = (JPanel) parent;
+            TitledBorder border = (TitledBorder) panel.getBorder();
+            border.setTitleColor(enabled ? UIManager.getColor("Label.foreground") : UIManager.getColor("Label.disabledForeground"));
+            panel.repaint(); // Force a repaint to show the color change
+        }
+    }
+
+    /**
+     * Sets the enabled state of a component and all its children
+     * 
+     * @param component The component to update
+     * @param enabled The enabled state to set
+     */
+    private void setComponentAndChildrenEnabled(Component component, boolean enabled) {
+        component.setEnabled(enabled);
+        if (component instanceof Container) {
+            for (Component child : ((Container) component).getComponents()) {
+                setComponentAndChildrenEnabled(child, enabled);
+            }
+        }
+    }
+
     private void setProcessingState(boolean processing) {
                 
         // Update UI components
@@ -587,14 +911,40 @@ public class MangaPagesSplitterUI extends JFrame {
         autoDetectRadio.setEnabled(!processing);
         keepOriginalRadio.setEnabled(!processing);
         splitAllRadio.setEnabled(!processing);
-        japaneseRadio.setEnabled(!processing && (splitMode == 0 || splitMode == 2));
-        westernRadio.setEnabled(!processing && (splitMode == 0 || splitMode == 2));
-        skipImagesCheckbox.setEnabled(!processing && (splitMode == 0 || splitMode == 2));
-        skipStartSpinner.setEnabled(!processing && skipImagesCheckbox.isSelected());
-        skipEndSpinner.setEnabled(!processing && skipImagesCheckbox.isSelected());
-        rotateWideImagesCheckbox.setEnabled(!processing && splitMode != 2);
+        
+        // Update entire panels based on current mode
+        if (!processing) {
+            // Only update these panels if we're not in processing state
+            if (autoDetectRadio.isSelected()) {
+                setDirectionPanelEnabled(true);
+                setExceptionsPanelEnabled(true);
+                setRotationPanelEnabled(true);
+            } else if (keepOriginalRadio.isSelected()) {
+                setDirectionPanelEnabled(false);
+                setExceptionsPanelEnabled(false);
+                setRotationPanelEnabled(true);
+            } else if (splitAllRadio.isSelected()) {
+                setDirectionPanelEnabled(true);
+                setExceptionsPanelEnabled(true);
+                // Only enable rotation if we have exceptions
+                setRotationPanelEnabled(skipImagesCheckbox.isSelected());
+            }
+        } else {
+            // If processing, disable all panels
+            setDirectionPanelEnabled(false);
+            setExceptionsPanelEnabled(false);
+            setRotationPanelEnabled(false);
+        }
+        
         keepFilesRadio.setEnabled(!processing);
         deleteFilesRadio.setEnabled(!processing);
+        
+        // Disable format selection while processing
+        cbzFormatRadio.setEnabled(!processing);
+        cbrFormatRadio.setEnabled(!processing);
+        zipFormatRadio.setEnabled(!processing);
+        rarFormatRadio.setEnabled(!processing);
+        folderFormatRadio.setEnabled(!processing);
         
         // Reset progress bar
         if (processing) {
@@ -603,6 +953,12 @@ public class MangaPagesSplitterUI extends JFrame {
         } else {
             progressBar.setValue(0);
             progressBar.setString("Ready");
+        }
+
+        // If we're returning from processing, update the panes
+        if (!processing && !rootFolder.isEmpty()) {
+            updateInputFilesPane();
+            updatePreview();
         }
     }
     
