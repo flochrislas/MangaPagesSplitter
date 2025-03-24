@@ -35,7 +35,8 @@ public class MangaPagesSplitter {
     public static void processWithUI(
             String rootFolder, int splitMode, boolean isJapaneseManga, boolean deleteOriginals,
             int skipImagesFromStart, int skipImagesFromEnd, boolean rotateWideImages, 
-            String outputFormat, MangaPagesSplitterUI uiInstance) throws IOException {
+            String outputFormat, int cropLeft, int cropRight, int cropTop, int cropBottom,
+            MangaPagesSplitterUI uiInstance) throws IOException {
         
         ui = uiInstance;
         
@@ -75,10 +76,12 @@ public class MangaPagesSplitter {
                                               (int)((processedFolders[0] * 100) / totalFolders));
                             }
                             
+                            // Pass crop parameters to processFolderAndCreateOutput
                             Path newOutputPath = processFolderAndCreateOutput(folder, Paths.get(rootFolder), splitMode, 
                                                                   isJapaneseManga, deleteOriginals,
                                                                   skipImagesFromStart, skipImagesFromEnd,
-                                                                  rotateWideImages, outputFormat);
+                                                                  rotateWideImages, outputFormat,
+                                                                  cropLeft, cropRight, cropTop, cropBottom);
                             if (newOutputPath != null) {
                                 newlyCreatedOutputFiles.add(newOutputPath);
                                 logMessage("Created: " + newOutputPath.getFileName());
@@ -240,9 +243,11 @@ public class MangaPagesSplitter {
     }
 
     // Renamed method to reflect that it handles different output formats now
+    // Updated method signature for processFolderAndCreateOutput
     private static Path processFolderAndCreateOutput(Path folder, Path rootFolder, int splitMode, boolean isJapaneseManga, 
                                                 boolean deleteOriginals, int skipImagesFromStart, int skipImagesFromEnd,
-                                                boolean rotateWideImages, String outputFormat) throws IOException {
+                                                boolean rotateWideImages, String outputFormat,
+                                                int cropLeft, int cropRight, int cropTop, int cropBottom) throws IOException {
         logMessage("Processing folder: " + folder);
 
         List<Path> imagePaths = new ArrayList<>();
@@ -291,6 +296,21 @@ public class MangaPagesSplitter {
             try {
                 BufferedImage img = ImageIO.read(imagePath.toFile());
                 if (img != null) {
+                    // Apply cropping if needed
+                    if (cropLeft > 0 || cropRight > 0 || cropTop > 0 || cropBottom > 0) {
+                        img = cropImage(img, cropLeft, cropRight, cropTop, cropBottom);
+                        // Save the cropped image back to the same file
+                        String extension = imagePath.toString().substring(imagePath.toString().lastIndexOf('.') + 1);
+                        ImageIO.write(img, extension, imagePath.toFile());
+                        
+                        // Log only the first few cropped images to avoid flooding the log
+                        if (i < 3) {
+                            logMessage("Cropped image: " + imagePath.getFileName());
+                        } else if (i == 3) {
+                            logMessage("Cropping remaining images...");
+                        }
+                    }
+                    
                     int width = img.getWidth();
                     int height = img.getHeight();
                     isWideImage = width > height;
@@ -680,5 +700,27 @@ public class MangaPagesSplitter {
         }
 
         return false;
+    }
+
+    /**
+     * Crops an image by removing specified number of pixels from each side.
+     *
+     * @param img The original image
+     * @param left Pixels to crop from left
+     * @param right Pixels to crop from right
+     * @param top Pixels to crop from top
+     * @param bottom Pixels to crop from bottom
+     * @return The cropped image
+     */
+    private static BufferedImage cropImage(BufferedImage img, int left, int right, int top, int bottom) {
+        int origWidth = img.getWidth();
+        int origHeight = img.getHeight();
+        
+        // Calculate new dimensions
+        int newWidth = Math.max(1, origWidth - left - right);
+        int newHeight = Math.max(1, origHeight - top - bottom);
+        
+        // Create cropped image
+        return img.getSubimage(left, top, newWidth, newHeight);
     }
 }

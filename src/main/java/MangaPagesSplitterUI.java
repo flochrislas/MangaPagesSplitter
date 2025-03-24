@@ -19,11 +19,15 @@ public class MangaPagesSplitterUI extends JFrame {
     private JSpinner skipStartSpinner, skipEndSpinner;
     private JCheckBox rotateWideImagesCheckbox;
     
+    // Crop options
+    private JSpinner cropLeftSpinner, cropRightSpinner, cropTopSpinner, cropBottomSpinner;
+    private int cropLeft = 0, cropRight = 0, cropTop = 0, cropBottom = 0;
+    
     // Output format selection
     private JRadioButton cbzFormatRadio, cbrFormatRadio, zipFormatRadio, rarFormatRadio, folderFormatRadio;
     
     // UI components for feedback
-    private JTextPane inputFilesPane; // Changed from previewPane
+    private JTextPane inputFilesPane;
     private JTextArea logArea;
     private JProgressBar progressBar;
     private JButton startButton;
@@ -43,8 +47,8 @@ public class MangaPagesSplitterUI extends JFrame {
     
     public MangaPagesSplitterUI() {
         setTitle("Manga Pages Splitter");
-        setSize(900, 700);
-        setMinimumSize(new Dimension(800, 600));
+        setSize(900, 825); // Increased height to show all panels
+        setMinimumSize(new Dimension(800, 825)); // Also increased minimum height
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
         
@@ -91,6 +95,12 @@ public class MangaPagesSplitterUI extends JFrame {
         deleteFilesRadio = new JRadioButton("Delete input files after processing");
         deletionGroup.add(keepFilesRadio);
         deletionGroup.add(deleteFilesRadio);
+        
+        // Crop options
+        cropLeftSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 1000, 1));
+        cropRightSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 1000, 1));
+        cropTopSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 1000, 1));
+        cropBottomSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 1000, 1));
         
         // Output format options
         ButtonGroup formatGroup = new ButtonGroup();
@@ -144,6 +154,39 @@ public class MangaPagesSplitterUI extends JFrame {
         westPanel.setLayout(new BoxLayout(westPanel, BoxLayout.Y_AXIS));
         westPanel.setBorder(new EmptyBorder(5, 10, 5, 10));
         westPanel.setPreferredSize(new Dimension(300, 400));
+        
+        // Add crop options panel first
+        JPanel cropPanel = createSectionPanel("Image Cropping (applied before splitting)", 280, 103);
+        cropPanel.setLayout(new BoxLayout(cropPanel, BoxLayout.Y_AXIS));
+        cropPanel.add(Box.createRigidArea(new Dimension(0, 5)));
+        
+        // Left and right crop panel
+        JPanel leftRightPanel = createFixedHeightPanel(30);
+        leftRightPanel.add(new JLabel("Left:"));
+        leftRightPanel.add(cropLeftSpinner);
+        leftRightPanel.add(Box.createHorizontalStrut(10));
+        leftRightPanel.add(new JLabel("Right:"));
+        leftRightPanel.add(cropRightSpinner);
+        cropPanel.add(leftRightPanel);
+        
+        // Top and bottom crop panel
+        JPanel topBottomPanel = createFixedHeightPanel(30);
+        topBottomPanel.add(new JLabel("Top:"));
+        topBottomPanel.add(cropTopSpinner);
+        topBottomPanel.add(Box.createHorizontalStrut(10));
+        topBottomPanel.add(new JLabel("Bottom:"));
+        topBottomPanel.add(cropBottomSpinner);
+        cropPanel.add(topBottomPanel);
+        
+        // Add explanatory label
+        JPanel infoPanel = createFixedHeightPanel(20);
+        JLabel infoLabel = new JLabel("Values in pixels. 0 means no cropping.");
+        infoLabel.setFont(new Font("SansSerif", Font.ITALIC, 10));
+        infoPanel.add(infoLabel);
+        cropPanel.add(infoPanel);
+        
+        westPanel.add(cropPanel);
+        westPanel.add(Box.createRigidArea(new Dimension(0, 8)));
         
         // Panel for splitting options
         JPanel splitPanel = createSectionPanel("Image Splitting Options", 280, 90);
@@ -437,6 +480,20 @@ public class MangaPagesSplitterUI extends JFrame {
                 resetUIAfterProcessing();
             }
         });
+        
+        // Crop spinner changes
+        ChangeListener cropListener = e -> {
+            cropLeft = (Integer) cropLeftSpinner.getValue();
+            cropRight = (Integer) cropRightSpinner.getValue();
+            cropTop = (Integer) cropTopSpinner.getValue();
+            cropBottom = (Integer) cropBottomSpinner.getValue();
+            updatePreview();
+        };
+        
+        cropLeftSpinner.addChangeListener(cropListener);
+        cropRightSpinner.addChangeListener(cropListener);
+        cropTopSpinner.addChangeListener(cropListener);
+        cropBottomSpinner.addChangeListener(cropListener);
     }
     
     /**
@@ -602,6 +659,15 @@ public class MangaPagesSplitterUI extends JFrame {
             text.append("Image rotation: Wide images will be rotated 90° clockwise\n");
         }
         
+        // Crop information
+        if (cropLeft > 0 || cropRight > 0 || cropTop > 0 || cropBottom > 0) {
+            text.append("Cropping: ");
+            text.append("Left=" + cropLeft + "px, ");
+            text.append("Right=" + cropRight + "px, ");
+            text.append("Top=" + cropTop + "px, ");
+            text.append("Bottom=" + cropBottom + "px\n");
+        }
+        
         // Output format
         text.append("Output format: ");
         switch (outputFormat) {
@@ -635,6 +701,12 @@ public class MangaPagesSplitterUI extends JFrame {
         // What will happen
         text.append("THE PROGRAM WILL:\n");
         text.append("- Extract all archive files (CBZ, CBR, ZIP, RAR)\n");
+        
+        // Add cropping step if needed
+        if (cropLeft > 0 || cropRight > 0 || cropTop > 0 || cropBottom > 0) {
+            text.append("- Crop " + cropLeft + "px from left, " + cropRight + "px from right, " +
+                       cropTop + "px from top, " + cropBottom + "px from bottom of each image\n");
+        }
         
         if (splitMode == 0) {
             text.append("- Analyze each image and split those that are wider than tall\n");
@@ -680,11 +752,6 @@ public class MangaPagesSplitterUI extends JFrame {
         logArea.setText(text.toString());
     }
     
-    // Add method to check if processing is cancelled
-    public boolean isCancelled() {
-        return currentWorker != null && currentWorker.isCancelled();
-    }
-    
     private void startProcessing() {
         // Get current configuration
         if (skipImagesCheckbox.isSelected()) {
@@ -695,6 +762,12 @@ public class MangaPagesSplitterUI extends JFrame {
             skipImagesFromEnd = 0;
         }
         rotateWideImages = rotateWideImagesCheckbox.isSelected();
+        
+        // Get crop values (already set by event handlers but to be safe)
+        cropLeft = (Integer) cropLeftSpinner.getValue();
+        cropRight = (Integer) cropRightSpinner.getValue();
+        cropTop = (Integer) cropTopSpinner.getValue();
+        cropBottom = (Integer) cropBottomSpinner.getValue();
         
         // Update UI for processing state
         setProcessingState(true);
@@ -717,6 +790,12 @@ public class MangaPagesSplitterUI extends JFrame {
                                 skipImagesFromEnd + " images from end of each manga");
                     }
                     
+                    // Add logging for crop values if any
+                    if (cropLeft > 0 || cropRight > 0 || cropTop > 0 || cropBottom > 0) {
+                        publish("Cropping: Left=" + cropLeft + "px, Right=" + cropRight + 
+                               "px, Top=" + cropTop + "px, Bottom=" + cropBottom + "px");
+                    }
+                    
                     if (rotateWideImages && splitMode != 2) {
                         publish("Wide images will be rotated 90° clockwise");
                     }
@@ -726,11 +805,12 @@ public class MangaPagesSplitterUI extends JFrame {
                     publish("------------------------------");
                     
                     // Call MangaPagesSplitter to do the actual processing
-                    // Pass the UI instance and output format
+                    // Pass the UI instance, output format, and crop values
                     MangaPagesSplitter.processWithUI(
                         rootFolder, splitMode, isJapaneseManga, deleteOriginals,
                         skipImagesFromStart, skipImagesFromEnd, rotateWideImages, 
-                        outputFormat, MangaPagesSplitterUI.this);
+                        outputFormat, cropLeft, cropRight, cropTop, cropBottom,
+                        MangaPagesSplitterUI.this);
                     
                 } catch (Exception e) {
                     publish("ERROR: " + e.getMessage());
@@ -764,6 +844,77 @@ public class MangaPagesSplitterUI extends JFrame {
         };
         
         currentWorker.execute();
+    }
+    
+    private void setProcessingState(boolean processing) {
+        // Update UI components
+        startButton.setEnabled(!processing);
+        cancelButton.setEnabled(processing);
+        browseButton.setEnabled(!processing);
+        
+        // Disable configuration while processing
+        autoDetectRadio.setEnabled(!processing);
+        keepOriginalRadio.setEnabled(!processing);
+        splitAllRadio.setEnabled(!processing);
+        
+        // Update entire panels based on current mode
+        if (!processing) {
+            // Only update these panels if we're not in processing state
+            if (autoDetectRadio.isSelected()) {
+                setDirectionPanelEnabled(true);
+                setExceptionsPanelEnabled(true);
+                setRotationPanelEnabled(true);
+            } else if (keepOriginalRadio.isSelected()) {
+                setDirectionPanelEnabled(false);
+                setExceptionsPanelEnabled(false);
+                setRotationPanelEnabled(true);
+            } else if (splitAllRadio.isSelected()) {
+                setDirectionPanelEnabled(true);
+                setExceptionsPanelEnabled(true);
+                // Only enable rotation if we have exceptions
+                setRotationPanelEnabled(skipImagesCheckbox.isSelected());
+            }
+        } else {
+            // If processing, disable all panels
+            setDirectionPanelEnabled(false);
+            setExceptionsPanelEnabled(false);
+            setRotationPanelEnabled(false);
+        }
+        
+        keepFilesRadio.setEnabled(!processing);
+        deleteFilesRadio.setEnabled(!processing);
+        
+        // Disable crop spinners during processing
+        cropLeftSpinner.setEnabled(!processing);
+        cropRightSpinner.setEnabled(!processing);
+        cropTopSpinner.setEnabled(!processing);
+        cropBottomSpinner.setEnabled(!processing);
+        
+        // Disable format selection while processing
+        cbzFormatRadio.setEnabled(!processing);
+        cbrFormatRadio.setEnabled(!processing);
+        zipFormatRadio.setEnabled(!processing);
+        rarFormatRadio.setEnabled(!processing);
+        folderFormatRadio.setEnabled(!processing);
+        
+        // Reset progress bar
+        if (processing) {
+            progressBar.setValue(0);
+            progressBar.setString("Starting...");
+        } else {
+            progressBar.setValue(0);
+            progressBar.setString("Ready");
+        }
+
+        // If we're returning from processing, update the panes
+        if (!processing && !rootFolder.isEmpty()) {
+            updateInputFilesPane();
+            updatePreview();
+        }
+    }
+    
+    public boolean isCancelled() {
+        return currentWorker != null && currentWorker.isCancelled();
     }
     
     public void updateProgress(String status, int percentage) {
@@ -897,68 +1048,6 @@ public class MangaPagesSplitterUI extends JFrame {
             for (Component child : ((Container) component).getComponents()) {
                 setComponentAndChildrenEnabled(child, enabled);
             }
-        }
-    }
-
-    private void setProcessingState(boolean processing) {
-                
-        // Update UI components
-        startButton.setEnabled(!processing);
-        cancelButton.setEnabled(processing);
-        browseButton.setEnabled(!processing);
-        
-        // Disable configuration while processing
-        autoDetectRadio.setEnabled(!processing);
-        keepOriginalRadio.setEnabled(!processing);
-        splitAllRadio.setEnabled(!processing);
-        
-        // Update entire panels based on current mode
-        if (!processing) {
-            // Only update these panels if we're not in processing state
-            if (autoDetectRadio.isSelected()) {
-                setDirectionPanelEnabled(true);
-                setExceptionsPanelEnabled(true);
-                setRotationPanelEnabled(true);
-            } else if (keepOriginalRadio.isSelected()) {
-                setDirectionPanelEnabled(false);
-                setExceptionsPanelEnabled(false);
-                setRotationPanelEnabled(true);
-            } else if (splitAllRadio.isSelected()) {
-                setDirectionPanelEnabled(true);
-                setExceptionsPanelEnabled(true);
-                // Only enable rotation if we have exceptions
-                setRotationPanelEnabled(skipImagesCheckbox.isSelected());
-            }
-        } else {
-            // If processing, disable all panels
-            setDirectionPanelEnabled(false);
-            setExceptionsPanelEnabled(false);
-            setRotationPanelEnabled(false);
-        }
-        
-        keepFilesRadio.setEnabled(!processing);
-        deleteFilesRadio.setEnabled(!processing);
-        
-        // Disable format selection while processing
-        cbzFormatRadio.setEnabled(!processing);
-        cbrFormatRadio.setEnabled(!processing);
-        zipFormatRadio.setEnabled(!processing);
-        rarFormatRadio.setEnabled(!processing);
-        folderFormatRadio.setEnabled(!processing);
-        
-        // Reset progress bar
-        if (processing) {
-            progressBar.setValue(0);
-            progressBar.setString("Starting...");
-        } else {
-            progressBar.setValue(0);
-            progressBar.setString("Ready");
-        }
-
-        // If we're returning from processing, update the panes
-        if (!processing && !rootFolder.isEmpty()) {
-            updateInputFilesPane();
-            updatePreview();
         }
     }
     
