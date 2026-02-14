@@ -11,21 +11,28 @@ You have a bunch of mangas on your computer, but they are not in a format that i
 Use this program, and after a few clicks, your manga(s) will be transformed into a format that is easy to read on smartphones and tablets.
 
 ## Application's features:
-- Can split all comics or manga's images vertically in half, order pages properly, and pack them into a CBZ file.
+- Can split all comics or manga's images vertically in half, and order pages properly.
   - Can skip a number of images at the start and end of the comic or manga.
 - Can process multiple comics or mangas at once, as long as they are in the same directory.
 - Comics or mangas can be in the form of a folder containing images, RAR, ZIP, CBZ or CBR files.
 - Can automatically detect when to split an image or not, and even preserve special double-page spreads if they are in an otherwise single paged manga.
 - Can automatically rotate double-page spreads 90 degrees clockwise.
+- Can crop images from all four sides (left, right, top, bottom) before processing.
+- Choose the output format: CBZ, CBR, ZIP, RAR, or a plain folder with images.
+- Choose the reading direction: Japanese (right to left) or Western (left to right).
+- Choose to keep or delete the original input files after processing.
+- Supported image formats: JPG, JPEG, PNG, GIF, BMP, WebP.
 
 ## Flow
-- When you run the program, it will ask you to choose your options and a directory.
-- Choose the directory where you placed all the mangas you want to transform.
-- A warning will be displayed, click OK if you want to process.
-- A message will be displayed when the process is over, click OK to close it.
+1. Select the root folder containing your mangas or comics. A preview of the files is shown (archives and folders are highlighted in green).
+2. Configure the processing options: image cropping, splitting mode, reading direction, page exceptions, image rotation, output format, and whether to keep or delete original files.
+3. Review the summary of what will be done in the Process pane.
+4. Click "Start Processing". A real-time progress bar and log show the current status.
+5. When processing is complete, a summary is displayed with the number of output files created.
 
 ## Limitations
-The program cannot handle RAR5 (RAR version 5) files directly. If it encounters this format, it will try to use WinRar or 7-Zip if it finds it on your computer, otherwise it will skip processing it.
+- The program cannot handle RAR5 (RAR version 5) files directly. If it encounters this format, it will try to use WinRar or 7-Zip if it finds it on your computer, otherwise it will skip processing it.
+- Creating RAR or CBR output files requires WinRAR to be installed. If WinRAR is not found, the program will fall back to creating a ZIP file instead.
 
 ## Implementation
 This is a simple Java application.
