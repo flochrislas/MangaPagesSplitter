@@ -1035,21 +1035,6 @@ public class MangaPagesSplitterUI extends JFrame {
             panel.repaint(); // Force a repaint to show the color change
         }
     }
-
-    /**
-     * Sets the enabled state of a component and all its children
-     * 
-     * @param component The component to update
-     * @param enabled The enabled state to set
-     */
-    private void setComponentAndChildrenEnabled(Component component, boolean enabled) {
-        component.setEnabled(enabled);
-        if (component instanceof Container) {
-            for (Component child : ((Container) component).getComponents()) {
-                setComponentAndChildrenEnabled(child, enabled);
-            }
-        }
-    }
     
     private void resetUIAfterProcessing() {
         setProcessingState(false);

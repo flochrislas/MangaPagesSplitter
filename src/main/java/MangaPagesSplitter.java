@@ -19,6 +19,16 @@ public class MangaPagesSplitter {
     
     private static MangaPagesSplitterUI ui = null;
 
+    private static class ArchiveExtractionResult {
+        public final List<Path> archivePaths;
+        public final List<Path> extractedFolders;
+        
+        public ArchiveExtractionResult(List<Path> archivePaths, List<Path> extractedFolders) {
+            this.archivePaths = archivePaths;
+            this.extractedFolders = extractedFolders;
+        }
+    }
+
     public static void main(String[] args) {
         try {
             // Set system look and feel
@@ -43,7 +53,10 @@ public class MangaPagesSplitter {
         try {
             logMessage("Starting extraction of archives...");
             // Step 1: Extract all archives and collect paths
-            List<Path> originalArchives = extractAllArchives(rootFolder);
+            ArchiveExtractionResult extractionResult = extractAllArchives(rootFolder);
+            List<Path> originalArchives = extractionResult.archivePaths;
+            List<Path> extractedFolders = extractionResult.extractedFolders;
+            
             logMessage("Extracted " + originalArchives.size() + " archives.");
             
             // Count total folders to process
@@ -64,6 +77,9 @@ public class MangaPagesSplitter {
             
             logMessage("Processing " + totalFolders + " folders...");
             
+            // Keep track of folders to delete after processing
+            List<Path> foldersToDelete = new ArrayList<>();
+            
             Files.list(Paths.get(rootFolder))
                     .filter(Files::isDirectory)
                     .forEach(folder -> {
@@ -81,10 +97,17 @@ public class MangaPagesSplitter {
                                                                   isJapaneseManga, deleteOriginals,
                                                                   skipImagesFromStart, skipImagesFromEnd,
                                                                   rotateWideImages, outputFormat,
-                                                                  cropLeft, cropRight, cropTop, cropBottom);
+                                                                  cropLeft, cropRight, cropTop, cropBottom,
+                                                                  extractedFolders);
                             if (newOutputPath != null) {
                                 newlyCreatedOutputFiles.add(newOutputPath);
                                 logMessage("Created: " + newOutputPath.getFileName());
+                                
+                                // Add folder to cleanup list if output is not "folder"
+                                // Only clean up extracted archive folders (intermediate) or if user wants originals deleted
+                                if (!outputFormat.equals("folder") && (extractedFolders.contains(folder) || deleteOriginals)) {
+                                    foldersToDelete.add(folder);
+                                }
                             }
                             
                             processedFolders[0]++;
@@ -101,10 +124,15 @@ public class MangaPagesSplitter {
             
             updateProgress("Cleaning up...", 90);
                     
-            // Delete original archives if needed
+            // Delete original archives if needed, but exclude newly created archive files
             if (deleteOriginals) {
                 logMessage("Deleting original archives...");
-                for (Path archive : originalArchives) {
+                
+                // Make a copy of the original archives list and remove any newly created output files
+                List<Path> archivesToDelete = new ArrayList<>(originalArchives);
+                archivesToDelete.removeAll(newlyCreatedOutputFiles);
+                
+                for (Path archive : archivesToDelete) {
                     try {
                         Files.delete(archive);
                         logMessage("Deleted original archive: " + archive.getFileName());
@@ -113,6 +141,16 @@ public class MangaPagesSplitter {
                     }
                 }
             }
+            
+            // Clean up intermediate folders
+            logMessage("Cleaning up intermediate folders used to create archives...");
+            for (Path folder : foldersToDelete) {
+                try {
+                    deleteDirectory(folder);
+                } catch (IOException e) {
+                    logMessage("Error cleaning up intermediate folder: " + folder + " - " + e.getMessage());
+                }
+            }            
 
             updateProgress("Complete", 100);
             String outputType = outputFormat.equals("folder") ? "folders" : outputFormat.toUpperCase() + " files";
@@ -138,9 +176,10 @@ public class MangaPagesSplitter {
         }
     }
 
-    private static List<Path> extractAllArchives(String rootFolder) throws IOException {
+    private static ArchiveExtractionResult extractAllArchives(String rootFolder) throws IOException {
         logMessage("Extracting archives in: " + rootFolder);
         List<Path> archivePaths = new ArrayList<>();
+        List<Path> extractedFolders = new ArrayList<>();
 
         // Count total archives
         long archiveCount;
@@ -170,14 +209,13 @@ public class MangaPagesSplitter {
         for (Path archivePath : archives) {
             // Check if processing was cancelled
             if (Thread.currentThread().isInterrupted() || (ui != null && ui.isCancelled())) {
-                return archivePaths;
+                return new ArchiveExtractionResult(archivePaths, extractedFolders);
             }
             
             archivePaths.add(archivePath); // Store the path for deletion later
             String baseName = archivePath.getFileName().toString();
             baseName = baseName.substring(0, baseName.lastIndexOf('.'));
             Path extractDir = Paths.get(rootFolder, baseName);
-
             try {
                 Files.createDirectories(extractDir);
 
@@ -206,13 +244,14 @@ public class MangaPagesSplitter {
                 }
 
                 logMessage("Extracted: " + archivePath.getFileName());
+                extractedFolders.add(extractDir); // Track that this folder came from an archive
                 processedArchives[0]++;
             } catch (IOException e) {
                 logMessage("Error extracting archive: " + archivePath + " - " + e.getMessage());
             }
         }
 
-        return archivePaths;
+        return new ArchiveExtractionResult(archivePaths, extractedFolders);
     }
 
     private static void extractZip(File zipFile, File destDir) throws IOException {
@@ -247,7 +286,8 @@ public class MangaPagesSplitter {
     private static Path processFolderAndCreateOutput(Path folder, Path rootFolder, int splitMode, boolean isJapaneseManga, 
                                                 boolean deleteOriginals, int skipImagesFromStart, int skipImagesFromEnd,
                                                 boolean rotateWideImages, String outputFormat,
-                                                int cropLeft, int cropRight, int cropTop, int cropBottom) throws IOException {
+                                                int cropLeft, int cropRight, int cropTop, int cropBottom,
+                                                List<Path> extractedFolders) throws IOException {
         logMessage("Processing folder: " + folder);
 
         List<Path> imagePaths = new ArrayList<>();
@@ -377,22 +417,74 @@ public class MangaPagesSplitter {
             
             // Create the appropriate output based on format
             if (outputFormat.equals("folder")) {
-                // For folder format, create a dedicated output folder
-                finalPath = rootFolder.resolve(folderName + "_processed");
-                Files.createDirectories(finalPath);
+                // For folder format, use the original folder name without any suffix
+                finalPath = rootFolder.resolve(folderName);
                 
-                // Copy all processed files to the output folder
+                // Create a temporary folder to hold the processed files
+                Path tempFolder = rootFolder.resolve(folderName + "_temp");
+                Files.createDirectories(tempFolder);
+                
+                // Copy all processed files to the temporary folder
                 for (Path file : processedFiles) {
-                    Path targetFile = finalPath.resolve(file.getFileName());
+                    Path targetFile = tempFolder.resolve(file.getFileName());
                     Files.copy(file, targetFile, StandardCopyOption.REPLACE_EXISTING);
                 }
                 
-                logMessage("Created output folder: " + finalPath.getFileName());
+                try {
+                    // Check if the folder was created from an archive
+                    boolean wasExtractedFromArchive = extractedFolders.contains(folder);
+                    
+                    if (deleteOriginals) {
+                        // Delete the folder if deleteOriginals is true
+                        deleteDirectory(folder);
+                        logMessage("Deleted " + (wasExtractedFromArchive ? "extracted " : "") + "folder: " + folder.getFileName());
+                    } else if (Files.isSameFile(folder, finalPath) && !wasExtractedFromArchive) {
+                        // Only preserve with "_original" suffix if:
+                        // 1. The path would conflict (same folder name), AND
+                        // 2. It was NOT an extracted archive folder
+                        Path originalFolderPath = rootFolder.resolve(folderName + "_original");
+                        if (Files.exists(originalFolderPath)) {
+                            logMessage("Warning: overwriting previous backup: " + originalFolderPath.getFileName());
+                        }
+                        Files.move(folder, originalFolderPath, StandardCopyOption.REPLACE_EXISTING);
+                        logMessage("Preserved original folder as: " + originalFolderPath.getFileName());
+                    } else if (wasExtractedFromArchive) {
+                        // This was an extracted archive folder, just delete it
+                        deleteDirectory(folder);
+                        logMessage("Cleaned up extracted folder: " + folder.getFileName());
+                    }
+                    // else - original folder with a different name is naturally preserved
+                    
+                    // Move the temp folder to the final path
+                    if (Files.exists(finalPath) && !Files.isSameFile(tempFolder, finalPath)) {
+                        deleteDirectory(finalPath);
+                    }
+                    Files.move(tempFolder, finalPath, StandardCopyOption.REPLACE_EXISTING);
+                    logMessage("Created output folder: " + finalPath.getFileName());
+                } catch (IOException e) {
+                    logMessage("Error finalizing folder: " + e.getMessage());
+                    finalPath = tempFolder; // Use temp folder if something fails
+                }
             } else {
                 // For archive formats
                 String extension = "." + outputFormat;
                 String outputName = folderName + extension;
                 finalPath = rootFolder.resolve(outputName);
+                
+                // Check if this would overwrite an original archive file (same name and extension)
+                if (!deleteOriginals && Files.exists(finalPath)) {
+                    // This is an original archive with the same name - preserve it by renaming
+                    Path backupPath = rootFolder.resolve(folderName + "_original" + extension);
+                    try {
+                        if (Files.exists(backupPath)) {
+                            logMessage("Warning: overwriting previous backup: " + backupPath.getFileName());
+                        }
+                        Files.move(finalPath, backupPath, StandardCopyOption.REPLACE_EXISTING);
+                        logMessage("Preserved original archive as: " + backupPath.getFileName());
+                    } catch (IOException e) {
+                        logMessage("Error preserving original archive: " + e.getMessage());
+                    }
+                }
                 
                 logMessage("Creating " + outputFormat.toUpperCase() + " archive: " + finalPath.getFileName());
                 
@@ -406,12 +498,6 @@ public class MangaPagesSplitter {
                         createRarArchive(processedFiles, finalPath.toFile());
                         break;
                 }
-            }
-            
-            // Delete the processed folder only if requested
-            if (deleteOriginals) {
-                deleteDirectory(folder);
-                logMessage("Deleted processed folder: " + folder.getFileName());
             }
             
             return finalPath;
