@@ -7,8 +7,17 @@ This tool allows you to process transformations on your comics or mangas in batc
 ### Problem:
 You have a bunch of mangas on your computer, but they are not in a format that is easy to read on a smartphone or tablet. For example, they are in the form of images, with 2 pages per image, and you have to zoom in and out to read them.
 
+For example you have a manga made of images that look like this:
+<img width="1149" height="656" alt="image" src="https://github.com/user-attachments/assets/d4d8a25a-1a80-46dd-ab41-7db29e926526" />
+
 ### Solution:
 Use this program, and after a few clicks, your manga(s) will be transformed into a format that is easy to read on smartphones and tablets.
+
+You get a manga made of images that look like this:
+
+<img width="590" height="961" alt="image" src="https://github.com/user-attachments/assets/d7ef1d06-7629-4a3d-b37b-b9d03b8b83a0" />
+
+<img width="589" height="959" alt="image" src="https://github.com/user-attachments/assets/27d0cb73-a126-4e4c-9342-3b76e3bccb5b" />
 
 ## Application's features:
 - Can split all comics or manga's images vertically in half, and order pages properly.
