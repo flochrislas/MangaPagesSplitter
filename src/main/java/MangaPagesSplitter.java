@@ -13,6 +13,8 @@ import java.io.*;
 import java.nio.file.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.zip.*;
 
 public class MangaPagesSplitter {
@@ -69,8 +71,8 @@ public class MangaPagesSplitter {
             
             // Count total folders to process
             long folderCount;
-            try {
-                folderCount = Files.list(Paths.get(rootFolder))
+            try (Stream<Path> folderStream = Files.list(Paths.get(rootFolder))) {
+                folderCount = folderStream
                                .filter(Files::isDirectory)
                                .count();
             } catch (IOException e) {
@@ -88,47 +90,51 @@ public class MangaPagesSplitter {
             // Keep track of folders to delete after processing
             List<Path> foldersToDelete = new ArrayList<>();
             
-            Files.list(Paths.get(rootFolder))
-                    .filter(Files::isDirectory)
-                    .forEach(folder -> {
-                        try {
-                            logMessage("Processing folder: " + folder.getFileName());
-                            
-                            // Update progress
-                            if (totalFolders > 0) {
-                                updateProgress("Processing folder " + (processedFolders[0] + 1) + "/" + totalFolders,
-                                              (int)((processedFolders[0] * 100) / totalFolders));
-                            }
-                            
-                            // Pass crop parameters to processFolderAndCreateOutput
-                            Path newOutputPath = processFolderAndCreateOutput(folder, Paths.get(rootFolder), splitMode, 
-                                                                  isJapaneseManga, deleteOriginals,
-                                                                  skipImagesFromStart, skipImagesFromEnd,
-                                                                  rotateWideImages, outputFormat,
-                                                                  cropLeft, cropRight, cropTop, cropBottom,
-                                                                  extractedFolders);
-                            if (newOutputPath != null) {
-                                newlyCreatedOutputFiles.add(newOutputPath);
-                                logMessage("Created: " + newOutputPath.getFileName());
-                                
-                                // Add folder to cleanup list if output is not "folder"
-                                // Only clean up extracted archive folders (intermediate) or if user wants originals deleted
-                                if (!outputFormat.equals("folder") && (extractedFolders.contains(folder) || deleteOriginals)) {
-                                    foldersToDelete.add(folder);
-                                }
-                            }
-                            
-                            processedFolders[0]++;
-                            
-                        } catch (IOException e) {
-                            logMessage("Error processing folder: " + folder + " - " + e.getMessage());
+            List<Path> folders;
+            try (Stream<Path> folderListStream = Files.list(Paths.get(rootFolder))) {
+                folders = folderListStream.filter(Files::isDirectory).collect(Collectors.toList());
+            }
+
+            for (Path folder : folders) {
+                // Check if the processing should be cancelled
+                if (Thread.currentThread().isInterrupted() || (ui != null && ui.isCancelled())) {
+                    logMessage("Processing cancelled by user.");
+                    break;
+                }
+
+                try {
+                    logMessage("Processing folder: " + folder.getFileName());
+
+                    // Update progress
+                    if (totalFolders > 0) {
+                        updateProgress("Processing folder " + (processedFolders[0] + 1) + "/" + totalFolders,
+                                      (int)((processedFolders[0] * 100) / totalFolders));
+                    }
+
+                    // Pass crop parameters to processFolderAndCreateOutput
+                    Path newOutputPath = processFolderAndCreateOutput(folder, Paths.get(rootFolder), splitMode,
+                                                          isJapaneseManga, deleteOriginals,
+                                                          skipImagesFromStart, skipImagesFromEnd,
+                                                          rotateWideImages, outputFormat,
+                                                          cropLeft, cropRight, cropTop, cropBottom,
+                                                          extractedFolders);
+                    if (newOutputPath != null) {
+                        newlyCreatedOutputFiles.add(newOutputPath);
+                        logMessage("Created: " + newOutputPath.getFileName());
+
+                        // Add folder to cleanup list if output is not "folder"
+                        // Only clean up extracted archive folders (intermediate) or if user wants originals deleted
+                        if (!outputFormat.equals("folder") && (extractedFolders.contains(folder) || deleteOriginals)) {
+                            foldersToDelete.add(folder);
                         }
-                        
-                        // Check if the processing should be cancelled
-                        if (Thread.currentThread().isInterrupted() || (ui != null && ui.isCancelled())) {
-                            logMessage("Processing cancelled by user.");
-                        }
-                    });
+                    }
+
+                    processedFolders[0]++;
+
+                } catch (IOException e) {
+                    logMessage("Error processing folder: " + folder + " - " + e.getMessage());
+                }
+            }
             
             updateProgress("Cleaning up...", 90);
                     
@@ -191,8 +197,8 @@ public class MangaPagesSplitter {
 
         // Count total archives
         long archiveCount;
-        try {
-            archiveCount = Files.list(Paths.get(rootFolder))
+        try (Stream<Path> archiveCountStream = Files.list(Paths.get(rootFolder))) {
+            archiveCount = archiveCountStream
                             .filter(Files::isRegularFile)
                             .filter(path -> isArchiveFile(path.toString()))
                             .count();
@@ -208,11 +214,13 @@ public class MangaPagesSplitter {
             logMessage("Found " + totalArchives + " archives to extract");
         }
 
-        List<Path> archives = new ArrayList<>();
-        Files.list(Paths.get(rootFolder))
-            .filter(Files::isRegularFile)
-            .filter(path -> isArchiveFile(path.toString()))
-            .forEach(archives::add);
+        List<Path> archives;
+        try (Stream<Path> archiveListStream = Files.list(Paths.get(rootFolder))) {
+            archives = archiveListStream
+                .filter(Files::isRegularFile)
+                .filter(path -> isArchiveFile(path.toString()))
+                .collect(Collectors.toList());
+        }
 
         for (Path archivePath : archives) {
             // Check if processing was cancelled
@@ -249,9 +257,8 @@ public class MangaPagesSplitter {
                 } else {
                     // Extract ZIP
                     extractZip(archivePath.toFile(), extractDir.toFile());
+                    logMessage("Extracted: " + archivePath.getFileName());
                 }
-
-                logMessage("Extracted: " + archivePath.getFileName());
                 extractedFolders.add(extractDir); // Track that this folder came from an archive
                 processedArchives[0]++;
             } catch (IOException e) {
@@ -276,6 +283,11 @@ public class MangaPagesSplitter {
 
                 File outputFile = new File(destDir, entry.getName());
 
+                // Validate path to prevent Zip Slip vulnerability
+                if (!outputFile.getCanonicalPath().startsWith(destDir.getCanonicalPath() + File.separator)) {
+                    throw new IOException("Zip entry outside target dir: " + entry.getName());
+                }
+
                 // Create parent directories if they don't exist
                 Files.createDirectories(outputFile.getParentFile().toPath());
 
@@ -298,27 +310,34 @@ public class MangaPagesSplitter {
                                                 List<Path> extractedFolders) throws IOException {
         logMessage("Processing folder: " + folder);
 
-        List<Path> imagePaths = new ArrayList<>();
+        List<Path> imagePaths;
         List<Path> processedFiles = new ArrayList<>();
 
-        // Find all image files
-        Files.walk(folder)
-                .filter(Files::isRegularFile)
-                .filter(path -> isImageFile(path.toString()))
-                .forEach(imagePaths::add);
+        // Find all image files (sorted for deterministic skip-from-start/end behavior)
+        try (Stream<Path> walk = Files.walk(folder)) {
+            imagePaths = walk
+                    .filter(Files::isRegularFile)
+                    .filter(path -> isImageFile(path.toString()))
+                    .sorted()
+                    .collect(Collectors.toList());
+        }
 
         if (imagePaths.isEmpty()) {
             logMessage("No images found in: " + folder);
             return null;
         }
-        
+
         int totalImages = imagePaths.size();
         logMessage("Found " + totalImages + " images in " + folder.getFileName());
-        
+
         // Calculate which images to actually process with exceptions
         int firstImageToProcess = Math.min(skipImagesFromStart, totalImages);
         int lastImageToProcess = Math.max(0, totalImages - skipImagesFromEnd);
         int latestSinglePageImageIndex = -99;
+
+        // Create temp directory for processed images to avoid modifying originals
+        Path tempDir = Files.createTempDirectory("manga_processing_");
+        try { // Wrapped in try-finally to ensure temp directory cleanup
 
         // Process each image
         for (int i = 0; i < imagePaths.size(); i++) {
@@ -326,31 +345,30 @@ public class MangaPagesSplitter {
             if (Thread.currentThread().isInterrupted() || (ui != null && ui.isCancelled())) {
                 return null;
             }
-            
+
             // Update progress (for image processing within the current folder)
             if (totalImages > 0) {
-                updateProgress("Processing image " + (i + 1) + "/" + totalImages + 
+                updateProgress("Processing image " + (i + 1) + "/" + totalImages +
                                " in " + folder.getFileName(), (int)((i * 100) / totalImages));
             }
-            
+
             Path imagePath = imagePaths.get(i);
             boolean shouldSplit = false;
             boolean isWideImage = false;
-            
+            boolean modified = false;
+
             // Check if this image should be skipped based on position
             boolean isExceptionImage = (i < firstImageToProcess) || (i >= lastImageToProcess);
-            
-            // Check if the image is wide (width > height)
+
+            // Read image once and process entirely in memory
             try {
                 BufferedImage img = ImageIO.read(imagePath.toFile());
                 if (img != null) {
-                    // Apply cropping if needed
+                    // Apply cropping in memory
                     if (cropLeft > 0 || cropRight > 0 || cropTop > 0 || cropBottom > 0) {
                         img = cropImage(img, cropLeft, cropRight, cropTop, cropBottom);
-                        // Save the cropped image back to the same file
-                        String extension = imagePath.toString().substring(imagePath.toString().lastIndexOf('.') + 1);
-                        ImageIO.write(img, extension, imagePath.toFile());
-                        
+                        modified = true;
+
                         // Log only the first few cropped images to avoid flooding the log
                         if (i < 3) {
                             logMessage("Cropped image: " + imagePath.getFileName());
@@ -358,11 +376,11 @@ public class MangaPagesSplitter {
                             logMessage("Cropping remaining images...");
                         }
                     }
-                    
+
                     int width = img.getWidth();
                     int height = img.getHeight();
                     isWideImage = width > height;
-                    
+
                     // Determine if this image should be split based on mode, dimensions, and exceptions
                     if (splitMode == 2 && !isExceptionImage) {
                         shouldSplit = true;
@@ -380,40 +398,52 @@ public class MangaPagesSplitter {
                             logMessage("Auto-detected double page for: " + imagePath.getFileName());
                         }
                     }
-                    
-                    // Apply rotation for wide images if requested and not splitting
+
+                    // Rotate in memory if requested and not splitting
                     if (rotateWideImages && isWideImage && !shouldSplit) {
-                        if (rotateImage(imagePath.toFile(), 90)) {
-                            logMessage("Rotated wide image: " + imagePath.getFileName());
-                        }
+                        img = rotateImage(img);
+                        modified = true;
+                        logMessage("Rotated wide image: " + imagePath.getFileName());
                     }
+
+                    if (isExceptionImage && (splitMode == 0 || splitMode == 2)) {
+                        logMessage("Skipping split for exception image: " + imagePath.getFileName());
+                    }
+
+                    if (shouldSplit) {
+                        BufferedImage[] halves = splitImage(img, isJapaneseManga);
+                        logMessage("Split image (" + (isJapaneseManga ? "right to left" : "left to right") + "): " + imagePath.getFileName());
+                        String baseName = imagePath.getFileName().toString();
+                        baseName = baseName.substring(0, baseName.lastIndexOf('.'));
+                        String ext = imagePath.toString().substring(imagePath.toString().lastIndexOf('.') + 1);
+
+                        Path firstPage = tempDir.resolve(baseName + "_1." + ext);
+                        Path secondPage = tempDir.resolve(baseName + "_2." + ext);
+
+                        if (!ImageIO.write(halves[0], ext, firstPage.toFile())) {
+                            logMessage("Warning: failed to write image: " + firstPage.getFileName());
+                        }
+                        if (!ImageIO.write(halves[1], ext, secondPage.toFile())) {
+                            logMessage("Warning: failed to write image: " + secondPage.getFileName());
+                        }
+
+                        processedFiles.add(firstPage);
+                        processedFiles.add(secondPage);
+                    } else if (modified) {
+                        String ext = imagePath.toString().substring(imagePath.toString().lastIndexOf('.') + 1);
+                        Path tempFile = tempDir.resolve(imagePath.getFileName());
+                        if (!ImageIO.write(img, ext, tempFile.toFile())) {
+                            logMessage("Warning: failed to write image: " + tempFile.getFileName());
+                        }
+                        processedFiles.add(tempFile);
+                    } else {
+                        processedFiles.add(imagePath);
+                    }
+                } else {
+                    processedFiles.add(imagePath);
                 }
             } catch (IOException e) {
                 logMessage("Error processing image: " + imagePath + " - " + e.getMessage());
-            }
-            
-            if (isExceptionImage && (splitMode == 0 || splitMode == 2)) {
-                logMessage("Skipping split for exception image: " + imagePath.getFileName());
-            }
-
-            if (shouldSplit) {
-                if (splitImage(imagePath.toFile(), isJapaneseManga)) {
-                    String baseName = imagePath.getFileName().toString();
-                    baseName = baseName.substring(0, baseName.lastIndexOf('.'));
-                    String ext = imagePath.toString().substring(imagePath.toString().lastIndexOf('.'));
-
-                    Path firstPage = imagePath.resolveSibling(baseName + "_1" + ext);
-                    Path secondPage = imagePath.resolveSibling(baseName + "_2" + ext);
-
-                    processedFiles.add(firstPage);
-                    processedFiles.add(secondPage);
-
-                    // Delete original file only if requested
-                    if (deleteOriginals) {
-                        Files.delete(imagePath);
-                    }
-                }
-            } else {
                 processedFiles.add(imagePath);
             }
         }
@@ -512,90 +542,51 @@ public class MangaPagesSplitter {
         }
 
         return null;
+        } finally {
+            // Clean up temp directory used for processed images
+            if (Files.exists(tempDir)) {
+                try {
+                    deleteDirectory(tempDir);
+                } catch (IOException e) {
+                    logMessage("Warning: failed to clean up temp directory: " + e.getMessage());
+                }
+            }
+        }
     }
     
-    private static boolean rotateImage(File imageFile, int degrees) {
-        try {
-            BufferedImage originalImage = ImageIO.read(imageFile);
-            if (originalImage == null) {
-                System.err.println("Could not read image for rotation: " + imageFile);
-                return false;
-            }
-            
-            // Calculate the new dimensions for the rotated image
-            int width = originalImage.getWidth();
-            int height = originalImage.getHeight();
-            
-            // Create a new rotated image
-            BufferedImage rotatedImage = new BufferedImage(height, width, originalImage.getType());
-            
-            // Create the rotation transformation
-            AffineTransform rotation = new AffineTransform();
-            rotation.translate(height, 0);
-            rotation.rotate(Math.toRadians(degrees));
-            
-            // Apply the transformation
-            Graphics2D g2d = rotatedImage.createGraphics();
-            g2d.setTransform(rotation);
-            g2d.drawImage(originalImage, 0, 0, null);
-            g2d.dispose();
-            
-            // Get file extension
-            String fileName = imageFile.getName();
-            String extension = fileName.substring(fileName.lastIndexOf('.') + 1);
-            
-            // Save the rotated image over the original
-            ImageIO.write(rotatedImage, extension, imageFile);
-            
-            return true;
-        } catch (IOException e) {
-            System.err.println("Error rotating image " + imageFile + ": " + e.getMessage());
-            return false;
-        }
+    private static BufferedImage rotateImage(BufferedImage originalImage) {
+        int width = originalImage.getWidth();
+        int height = originalImage.getHeight();
+
+        BufferedImage rotatedImage = new BufferedImage(height, width, originalImage.getType());
+
+        AffineTransform rotation = new AffineTransform();
+        rotation.translate(height, 0);
+        rotation.rotate(Math.toRadians(90));
+
+        Graphics2D g2d = rotatedImage.createGraphics();
+        g2d.setTransform(rotation);
+        g2d.drawImage(originalImage, 0, 0, null);
+        g2d.dispose();
+
+        return rotatedImage;
     }
 
-    private static boolean splitImage(File imageFile, boolean isJapaneseManga) {
-        try {
-            BufferedImage originalImage = ImageIO.read(imageFile);
-            if (originalImage == null) {
-                System.err.println("Could not read image: " + imageFile);
-                return false;
-            }
+    private static BufferedImage[] splitImage(BufferedImage originalImage, boolean isJapaneseManga) {
+        int width = originalImage.getWidth();
+        int height = originalImage.getHeight();
 
-            int width = originalImage.getWidth();
-            int height = originalImage.getHeight();
+        BufferedImage firstHalf, secondHalf;
 
-            String fileName = imageFile.getName();
-            String baseName = fileName.substring(0, fileName.lastIndexOf('.'));
-            String extension = fileName.substring(fileName.lastIndexOf('.') + 1);
-
-            // For Japanese manga, right half is first (_1)
-            // For Western style, left half is first (_1)
-            BufferedImage firstHalf, secondHalf;
-
-            if (isJapaneseManga) {
-                // Japanese manga: right half is read first
-                firstHalf = getRightHalf(originalImage, width, height);
-                secondHalf = getLeftHalf(originalImage, width, height);
-                System.out.println("Split image for Japanese manga (right to left): " + imageFile.getName());
-            } else {
-                // Western style: left half is read first
-                firstHalf = getLeftHalf(originalImage, width, height);
-                secondHalf = getRightHalf(originalImage, width, height);
-                System.out.println("Split image for Western style (left to right): " + imageFile.getName());
-            }
-
-            File firstFile = new File(imageFile.getParent(), baseName + "_1." + extension);
-            ImageIO.write(firstHalf, extension, firstFile);
-
-            File secondFile = new File(imageFile.getParent(), baseName + "_2." + extension);
-            ImageIO.write(secondHalf, extension, secondFile);
-
-            return true;
-        } catch (IOException e) {
-            System.err.println("Error splitting image " + imageFile + ": " + e.getMessage());
-            return false;
+        if (isJapaneseManga) {
+            firstHalf = getRightHalf(originalImage, width, height);
+            secondHalf = getLeftHalf(originalImage, width, height);
+        } else {
+            firstHalf = getLeftHalf(originalImage, width, height);
+            secondHalf = getRightHalf(originalImage, width, height);
         }
+
+        return new BufferedImage[]{firstHalf, secondHalf};
     }
 
     private static BufferedImage getLeftHalf(BufferedImage originalImage, int width, int height) {
@@ -680,9 +671,8 @@ public class MangaPagesSplitter {
                     ProcessBuilder pb = new ProcessBuilder(
                         winRarPath, "a", "-ep", outputFile.getAbsolutePath(), "@" + tempListFile.getAbsolutePath()
                     );
-                    
-                    Process process = pb.start();
-                    int exitCode = process.waitFor();
+
+                    int exitCode = runProcess(pb);
                     
                     // Clean up temp file
                     tempListFile.delete();
@@ -703,15 +693,16 @@ public class MangaPagesSplitter {
     }
 
     private static void deleteDirectory(Path directory) throws IOException {
-        Files.walk(directory)
-            .sorted((a, b) -> b.compareTo(a)) // Reverse order to delete children first
-            .forEach(path -> {
-                try {
-                    Files.delete(path);
-                } catch (IOException e) {
-                    System.err.println("Error deleting: " + path + " - " + e.getMessage());
-                }
-            });
+        try (Stream<Path> walk = Files.walk(directory)) {
+            walk.sorted((a, b) -> b.compareTo(a)) // Reverse order to delete children first
+                .forEach(path -> {
+                    try {
+                        Files.delete(path);
+                    } catch (IOException e) {
+                        System.err.println("Error deleting: " + path + " - " + e.getMessage());
+                    }
+                });
+        }
     }
 
     private static boolean isImageFile(String filePath) {
@@ -732,6 +723,16 @@ public class MangaPagesSplitter {
             }
         }
         return false;
+    }
+
+    private static int runProcess(ProcessBuilder pb) throws IOException, InterruptedException {
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+        try (InputStream is = process.getInputStream()) {
+            byte[] buf = new byte[1024];
+            while (is.read(buf) != -1) {}
+        }
+        return process.waitFor();
     }
 
     private static boolean extractWithExternalProgram(Path archivePath, Path extractDir) {
@@ -761,8 +762,7 @@ public class MangaPagesSplitter {
                         archivePath.toString(),
                         "-o" + extractDir.toString()
                     );
-                    Process process = pb.start();
-                    int exitCode = process.waitFor();
+                    int exitCode = runProcess(pb);
                     if (exitCode == 0) {
                         System.out.println("Successfully extracted with 7-Zip");
                         return true;
@@ -781,8 +781,7 @@ public class MangaPagesSplitter {
                     ProcessBuilder pb = new ProcessBuilder(
                         path, "x", archivePath.toString(), extractDir.toString()
                     );
-                    Process process = pb.start();
-                    int exitCode = process.waitFor();
+                    int exitCode = runProcess(pb);
                     if (exitCode == 0) {
                         System.out.println("Successfully extracted with WinRAR");
                         return true;
@@ -809,11 +808,17 @@ public class MangaPagesSplitter {
     private static BufferedImage cropImage(BufferedImage img, int left, int right, int top, int bottom) {
         int origWidth = img.getWidth();
         int origHeight = img.getHeight();
-        
+
+        // Validate crop values don't exceed image dimensions
+        if (left >= origWidth || top >= origHeight || left + right >= origWidth || top + bottom >= origHeight) {
+            logMessage("Warning: crop values exceed image dimensions, skipping crop");
+            return img;
+        }
+
         // Calculate new dimensions
         int newWidth = Math.max(1, origWidth - left - right);
         int newHeight = Math.max(1, origHeight - top - bottom);
-        
+
         // Create cropped image
         return img.getSubimage(left, top, newWidth, newHeight);
     }
