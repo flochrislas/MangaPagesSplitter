@@ -1,3 +1,7 @@
+import com.formdev.flatlaf.FlatDarkLaf;
+import com.formdev.flatlaf.FlatLaf;
+import com.formdev.flatlaf.FlatLightLaf;
+
 import javax.swing.*;
 import javax.swing.border.*;
 import java.awt.*;
@@ -7,6 +11,7 @@ import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.concurrent.ExecutionException;
+import java.util.prefs.Preferences;
 
 public class MangaPagesSplitterUI extends JFrame {
     // Main configuration objects
@@ -34,7 +39,8 @@ public class MangaPagesSplitterUI extends JFrame {
     private JButton cancelButton;
     
     private SwingWorker<Void, String> currentWorker = null;
-    
+    private JCheckBoxMenuItem darkThemeMenuItem;
+
     // Configuration values
     private int splitMode = 0; // 0=auto, 1=keep original, 2=split all
     private boolean isJapaneseManga = true;
@@ -53,11 +59,58 @@ public class MangaPagesSplitterUI extends JFrame {
         setLocationRelativeTo(null);
         
         initComponents();
+        createMenuBar();
         layoutComponents();
         wireEvents();
         updatePreview();
     }
     
+    private void createMenuBar() {
+        JMenuBar menuBar = new JMenuBar();
+        JMenu viewMenu = new JMenu("View");
+
+        boolean isDark = Preferences.userRoot().node("MangaPagesSplitter")
+                .getBoolean("darkTheme", true);
+        darkThemeMenuItem = new JCheckBoxMenuItem("Dark Theme", isDark);
+        darkThemeMenuItem.addActionListener(e -> {
+            boolean dark = darkThemeMenuItem.isSelected();
+            try {
+                if (dark) {
+                    UIManager.setLookAndFeel(new FlatDarkLaf());
+                } else {
+                    UIManager.setLookAndFeel(new FlatLightLaf());
+                }
+                FlatLaf.updateUI();
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+            Preferences.userRoot().node("MangaPagesSplitter")
+                    .putBoolean("darkTheme", dark);
+            if (!rootFolder.isEmpty()) {
+                updateInputFilesPane();
+            }
+        });
+        viewMenu.add(darkThemeMenuItem);
+        menuBar.add(viewMenu);
+        setJMenuBar(menuBar);
+    }
+
+    private boolean isDarkTheme() {
+        return UIManager.getLookAndFeel() instanceof FlatDarkLaf;
+    }
+
+    private String getProcessableColor() {
+        return isDarkTheme() ? "#73c936" : "#006400";
+    }
+
+    private String getIgnoredColor() {
+        return isDarkTheme() ? "#8c8c8c" : "#808080";
+    }
+
+    private String getErrorColor() {
+        return isDarkTheme() ? "#ff6b6b" : "#cc0000";
+    }
+
     private void initComponents() {
         // Root folder selection
         rootFolderField = new JTextField(30);
@@ -97,10 +150,15 @@ public class MangaPagesSplitterUI extends JFrame {
         deletionGroup.add(deleteFilesRadio);
         
         // Crop options
+        Dimension spinnerSize = new Dimension(65, 26);
         cropLeftSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 1000, 1));
+        cropLeftSpinner.setPreferredSize(spinnerSize);
         cropRightSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 1000, 1));
+        cropRightSpinner.setPreferredSize(spinnerSize);
         cropTopSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 1000, 1));
+        cropTopSpinner.setPreferredSize(spinnerSize);
         cropBottomSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 1000, 1));
+        cropBottomSpinner.setPreferredSize(spinnerSize);
         
         // Output format options
         ButtonGroup formatGroup = new ButtonGroup();
@@ -156,21 +214,21 @@ public class MangaPagesSplitterUI extends JFrame {
         westPanel.setPreferredSize(new Dimension(300, 400));
         
         // Add crop options panel first
-        JPanel cropPanel = createSectionPanel("Image Cropping (applied before splitting)", 280, 103);
+        JPanel cropPanel = createSectionPanel("Image Cropping (applied before splitting)", 280, 115);
         cropPanel.setLayout(new BoxLayout(cropPanel, BoxLayout.Y_AXIS));
         cropPanel.add(Box.createRigidArea(new Dimension(0, 5)));
-        
+
         // Left and right crop panel
-        JPanel leftRightPanel = createFixedHeightPanel(30);
+        JPanel leftRightPanel = createFixedHeightPanel(34);
         leftRightPanel.add(new JLabel("Left:"));
         leftRightPanel.add(cropLeftSpinner);
         leftRightPanel.add(Box.createHorizontalStrut(10));
         leftRightPanel.add(new JLabel("Right:"));
         leftRightPanel.add(cropRightSpinner);
         cropPanel.add(leftRightPanel);
-        
+
         // Top and bottom crop panel
-        JPanel topBottomPanel = createFixedHeightPanel(30);
+        JPanel topBottomPanel = createFixedHeightPanel(34);
         topBottomPanel.add(new JLabel("Top:"));
         topBottomPanel.add(cropTopSpinner);
         topBottomPanel.add(Box.createHorizontalStrut(10));
@@ -528,14 +586,20 @@ public class MangaPagesSplitterUI extends JFrame {
      * showing archives and folders that will be processed in green
      */
     private void updateInputFilesPane() {
+        Color fg = UIManager.getColor("TextPane.foreground");
+        Color bg = UIManager.getColor("TextPane.background");
+        String fgHex = String.format("#%02x%02x%02x", fg.getRed(), fg.getGreen(), fg.getBlue());
+        String bgHex = String.format("#%02x%02x%02x", bg.getRed(), bg.getGreen(), bg.getBlue());
+        String bodyStyle = "font-family: Arial; font-size: 12pt; text-align: left; color: " + fgHex + "; background-color: " + bgHex + ";";
+
         if (rootFolder.isEmpty()) {
-            inputFilesPane.setText("<html><body style='font-family: Arial; font-size: 12pt; text-align: left;'>" +
+            inputFilesPane.setText("<html><body style='" + bodyStyle + "'>" +
                                   "<i>No folder selected</i></body></html>");
             return;
         }
-        
+
         StringBuilder html = new StringBuilder();
-        html.append("<html><body style='font-family: Arial; font-size: 12pt; text-align: left;'>");
+        html.append("<html><body style='").append(bodyStyle).append("'>");
         
         try {
             File folder = new File(rootFolder);
@@ -569,7 +633,7 @@ public class MangaPagesSplitterUI extends JFrame {
                     
                     // Files to process are shown in green
                     if (isArchive || isDirectory) {
-                        html.append("<span style='color: green;'>");
+                        html.append("<span style='color: ").append(getProcessableColor()).append(";'>");
                         
                         if (isArchive) {
                             html.append("📦 "); // Archive icon
@@ -585,7 +649,7 @@ public class MangaPagesSplitterUI extends JFrame {
                         html.append("</span>");
                     } else {
                         // Files not to process are shown in gray
-                        html.append("<span style='color: gray;'>");
+                        html.append("<span style='color: ").append(getIgnoredColor()).append(";'>");
                         html.append("📄 ").append(fileName);
                         html.append("</span>");
                     }
@@ -596,7 +660,7 @@ public class MangaPagesSplitterUI extends JFrame {
                 html.append("</div>");
             }
         } catch (Exception e) {
-            html.append("<div style='text-align: left; color: red;'>Error reading folder: ").append(e.getMessage()).append("</div>");
+            html.append("<div style='text-align: left; color: ").append(getErrorColor()).append(";'>Error reading folder: ").append(e.getMessage()).append("</div>");
         }
         
         html.append("</body></html>");
@@ -1051,12 +1115,17 @@ public class MangaPagesSplitterUI extends JFrame {
     
     public static void main(String[] args) {
         try {
-            // Set system look and feel
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+            boolean darkTheme = Preferences.userRoot()
+                    .node("MangaPagesSplitter").getBoolean("darkTheme", true);
+            if (darkTheme) {
+                FlatDarkLaf.setup();
+            } else {
+                FlatLightLaf.setup();
+            }
         } catch (Exception e) {
             e.printStackTrace();
         }
-        
+
         SwingUtilities.invokeLater(() -> new MangaPagesSplitterUI().setVisible(true));
     }
 }

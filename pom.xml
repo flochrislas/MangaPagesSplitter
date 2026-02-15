@@ -26,6 +26,12 @@
       <artifactId>junrar</artifactId>
       <version>7.5.5</version>
     </dependency>
+    <!-- Modern Swing Look and Feel with dark/light themes -->
+    <dependency>
+      <groupId>com.formdev</groupId>
+      <artifactId>flatlaf</artifactId>
+      <version>3.7</version>
+    </dependency>
   </dependencies>
 
   <profiles>

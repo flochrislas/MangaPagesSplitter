@@ -1,6 +1,9 @@
 import com.github.junrar.Junrar;
 import com.github.junrar.exception.RarException;
 
+import com.formdev.flatlaf.FlatDarkLaf;
+import com.formdev.flatlaf.FlatLightLaf;
+
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
@@ -31,12 +34,17 @@ public class MangaPagesSplitter {
 
     public static void main(String[] args) {
         try {
-            // Set system look and feel
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+            boolean darkTheme = java.util.prefs.Preferences.userRoot()
+                    .node("MangaPagesSplitter").getBoolean("darkTheme", true);
+            if (darkTheme) {
+                FlatDarkLaf.setup();
+            } else {
+                FlatLightLaf.setup();
+            }
         } catch (Exception e) {
             e.printStackTrace();
         }
-        
+
         SwingUtilities.invokeLater(() -> new MangaPagesSplitterUI().setVisible(true));
     }
     
