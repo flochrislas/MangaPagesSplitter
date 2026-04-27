@@ -56,6 +56,7 @@ public class MangaPagesSplitter {
             String rootFolder, int splitMode, boolean isJapaneseManga, boolean deleteOriginals,
             int skipImagesFromStart, int skipImagesFromEnd, boolean rotateWideImages, 
             String outputFormat, int cropLeft, int cropRight, int cropTop, int cropBottom,
+            boolean flattenDirectories,
             MangaPagesSplitterUI uiInstance) throws IOException {
         
         ui = uiInstance;
@@ -69,31 +70,39 @@ public class MangaPagesSplitter {
             
             logMessage("Extracted " + originalArchives.size() + " archives.");
             
-            // Count total folders to process
-            long folderCount;
-            try (Stream<Path> folderStream = Files.list(Paths.get(rootFolder))) {
-                folderCount = folderStream
-                               .filter(Files::isDirectory)
-                               .count();
-            } catch (IOException e) {
-                folderCount = 0;
-                logMessage("Error counting folders: " + e.getMessage());
+            // Step 2: Collect folders to process
+            Path root = Paths.get(rootFolder);
+            List<Path> folders;
+            if (flattenDirectories) {
+                // Find every directory (at any depth) that directly contains image files
+                try (Stream<Path> walk = Files.walk(root)) {
+                    folders = walk
+                        .filter(Files::isDirectory)
+                        .filter(dir -> !dir.equals(root))
+                        .filter(dir -> {
+                            try (Stream<Path> children = Files.list(dir)) {
+                                return children.anyMatch(p -> Files.isRegularFile(p) && isImageFile(p.toString()));
+                            } catch (IOException e) {
+                                return false;
+                            }
+                        })
+                        .sorted()
+                        .collect(Collectors.toList());
+                }
+            } else {
+                try (Stream<Path> stream = Files.list(root)) {
+                    folders = stream.filter(Files::isDirectory).sorted().collect(Collectors.toList());
+                }
             }
-            
-            // Step 2: Process each folder and track new output files
+
+            final long totalFolders = folders.size();
             List<Path> newlyCreatedOutputFiles = new ArrayList<>();
-            final long totalFolders = folderCount;
             final int[] processedFolders = {0};
-            
+
             logMessage("Processing " + totalFolders + " folders...");
-            
+
             // Keep track of folders to delete after processing
             List<Path> foldersToDelete = new ArrayList<>();
-            
-            List<Path> folders;
-            try (Stream<Path> folderListStream = Files.list(Paths.get(rootFolder))) {
-                folders = folderListStream.filter(Files::isDirectory).collect(Collectors.toList());
-            }
 
             for (Path folder : folders) {
                 // Check if the processing should be cancelled
@@ -103,7 +112,21 @@ public class MangaPagesSplitter {
                 }
 
                 try {
-                    logMessage("Processing folder: " + folder.getFileName());
+                    // In flatten mode use "ParentName - LeafName" as the output name
+                    String outputName;
+                    if (flattenDirectories) {
+                        Path relativePath = root.relativize(folder);
+                        StringBuilder nameBuilder = new StringBuilder();
+                        for (int i = 0; i < relativePath.getNameCount(); i++) {
+                            if (i > 0) nameBuilder.append(" - ");
+                            nameBuilder.append(relativePath.getName(i).toString());
+                        }
+                        outputName = nameBuilder.toString();
+                    } else {
+                        outputName = folder.getFileName().toString();
+                    }
+
+                    logMessage("Processing folder: " + outputName);
 
                     // Update progress
                     if (totalFolders > 0) {
@@ -112,7 +135,7 @@ public class MangaPagesSplitter {
                     }
 
                     // Pass crop parameters to processFolderAndCreateOutput
-                    Path newOutputPath = processFolderAndCreateOutput(folder, Paths.get(rootFolder), splitMode,
+                    Path newOutputPath = processFolderAndCreateOutput(folder, root, outputName, splitMode,
                                                           isJapaneseManga, deleteOriginals,
                                                           skipImagesFromStart, skipImagesFromEnd,
                                                           rotateWideImages, outputFormat,
@@ -124,8 +147,19 @@ public class MangaPagesSplitter {
 
                         // Add folder to cleanup list if output is not "folder"
                         // Only clean up extracted archive folders (intermediate) or if user wants originals deleted
-                        if (!outputFormat.equals("folder") && (extractedFolders.contains(folder) || deleteOriginals)) {
-                            foldersToDelete.add(folder);
+                        if (!outputFormat.equals("folder")) {
+                            if (flattenDirectories) {
+                                // Clean up the top-level ancestor (direct child of root), not the leaf itself
+                                Path topLevelAncestor = root.resolve(root.relativize(folder).getName(0));
+                                if ((extractedFolders.contains(topLevelAncestor) || deleteOriginals)
+                                        && !foldersToDelete.contains(topLevelAncestor)) {
+                                    foldersToDelete.add(topLevelAncestor);
+                                }
+                            } else {
+                                if (extractedFolders.contains(folder) || deleteOriginals) {
+                                    foldersToDelete.add(folder);
+                                }
+                            }
                         }
                     }
 
@@ -303,7 +337,7 @@ public class MangaPagesSplitter {
 
     // Renamed method to reflect that it handles different output formats now
     // Updated method signature for processFolderAndCreateOutput
-    private static Path processFolderAndCreateOutput(Path folder, Path rootFolder, int splitMode, boolean isJapaneseManga, 
+    private static Path processFolderAndCreateOutput(Path folder, Path rootFolder, String outputName, int splitMode, boolean isJapaneseManga,
                                                 boolean deleteOriginals, int skipImagesFromStart, int skipImagesFromEnd,
                                                 boolean rotateWideImages, String outputFormat,
                                                 int cropLeft, int cropRight, int cropTop, int cropBottom,
@@ -450,7 +484,7 @@ public class MangaPagesSplitter {
 
         if (!processedFiles.isEmpty()) {
             // Create output based on selected format
-            String folderName = folder.getFileName().toString();
+            String folderName = outputName;
             Path finalPath;
             
             // Create the appropriate output based on format
@@ -506,8 +540,8 @@ public class MangaPagesSplitter {
             } else {
                 // For archive formats
                 String extension = "." + outputFormat;
-                String outputName = folderName + extension;
-                finalPath = rootFolder.resolve(outputName);
+                String archiveFileName = folderName + extension;
+                finalPath = rootFolder.resolve(archiveFileName);
                 
                 // Check if this would overwrite an original archive file (same name and extension)
                 if (!deleteOriginals && Files.exists(finalPath)) {

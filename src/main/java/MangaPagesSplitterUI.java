@@ -23,6 +23,7 @@ public class MangaPagesSplitterUI extends JFrame {
     private JCheckBox skipImagesCheckbox;
     private JSpinner skipStartSpinner, skipEndSpinner;
     private JCheckBox rotateWideImagesCheckbox;
+    private JCheckBox flattenDirectoriesCheckbox;
     
     // Crop options
     private JSpinner cropLeftSpinner, cropRightSpinner, cropTopSpinner, cropBottomSpinner;
@@ -50,6 +51,7 @@ public class MangaPagesSplitterUI extends JFrame {
     private boolean rotateWideImages = false;
     private String rootFolder = "";
     private String outputFormat = "cbz"; // Default output format
+    private boolean flattenDirectories = false;
     
     public MangaPagesSplitterUI() {
         setTitle("Manga Pages Splitter");
@@ -115,6 +117,7 @@ public class MangaPagesSplitterUI extends JFrame {
         // Root folder selection
         rootFolderField = new JTextField(30);
         browseButton = new JButton("Browse...");
+        flattenDirectoriesCheckbox = new JCheckBox("Flatten directory tree (one output file per sub-folder)");
         
         // Splitting options
         ButtonGroup splitGroup = new ButtonGroup();
@@ -198,13 +201,17 @@ public class MangaPagesSplitterUI extends JFrame {
         setLayout(new BorderLayout());
         
         // North panel: root folder selection
-        JPanel northPanel = new JPanel(new BorderLayout(5, 0));
-        JPanel folderPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JPanel northPanel = new JPanel();
+        northPanel.setLayout(new BoxLayout(northPanel, BoxLayout.Y_AXIS));
+        northPanel.setBorder(new EmptyBorder(10, 10, 5, 10));
+        JPanel folderPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
         folderPanel.add(new JLabel("Input files location:"));
         folderPanel.add(rootFolderField);
         folderPanel.add(browseButton);
-        northPanel.add(folderPanel, BorderLayout.CENTER);
-        northPanel.setBorder(new EmptyBorder(10, 10, 5, 10));
+        northPanel.add(folderPanel);
+        JPanel flattenPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+        flattenPanel.add(flattenDirectoriesCheckbox);
+        northPanel.add(flattenPanel);
         add(northPanel, BorderLayout.NORTH);
         
         // West panel: configuration options
@@ -401,6 +408,14 @@ public class MangaPagesSplitterUI extends JFrame {
     }
     
     private void wireEvents() {
+        flattenDirectoriesCheckbox.addActionListener(e -> {
+            flattenDirectories = flattenDirectoriesCheckbox.isSelected();
+            if (!rootFolder.isEmpty()) {
+                updateInputFilesPane();
+            }
+            updatePreview();
+        });
+
         // Folder selection - update to refresh input files panel
         browseButton.addActionListener(e -> {
             JFileChooser chooser = new JFileChooser();
@@ -607,56 +622,59 @@ public class MangaPagesSplitterUI extends JFrame {
             
             if (files == null || files.length == 0) {
                 html.append("<div style='text-align: left;'><i>Folder is empty</i></div>");
+            } else if (flattenDirectories) {
+                // Flatten mode: show archives at root level + recursive directory tree
+                html.append("<div style='text-align: left;'>");
+                for (File file : files) {
+                    if (isArchiveFile(file.getPath())) {
+                        html.append("<div style='margin: 3px 0;'>");
+                        html.append("<span style='color: ").append(getProcessableColor()).append(";'>");
+                        html.append("📦 <b>").append(file.getName()).append("</b> (Archive)");
+                        html.append("</span>");
+                        html.append("</div>");
+                    }
+                }
+                appendDirectoryTree(html, folder, 0);
+                html.append("</div>");
             } else {
-                // Sort files - directories first, then archives, then other files
+                // Normal mode: flat list of direct children
                 java.util.Arrays.sort(files, (f1, f2) -> {
                     boolean isDir1 = f1.isDirectory();
                     boolean isDir2 = f2.isDirectory();
                     boolean isArchive1 = isArchiveFile(f1.getPath());
                     boolean isArchive2 = isArchiveFile(f2.getPath());
-                    
+
                     if (isDir1 && !isDir2) return -1;
                     if (!isDir1 && isDir2) return 1;
                     if (isArchive1 && !isArchive2) return -1;
                     if (!isArchive1 && isArchive2) return 1;
                     return f1.getName().compareToIgnoreCase(f2.getName());
                 });
-                
+
                 html.append("<div style='text-align: left;'>");
-                
+
                 for (File file : files) {
                     String fileName = file.getName();
                     boolean isArchive = isArchiveFile(file.getPath());
                     boolean isDirectory = file.isDirectory();
-                    
+
                     html.append("<div style='margin: 3px 0;'>");
-                    
-                    // Files to process are shown in green
+
                     if (isArchive || isDirectory) {
                         html.append("<span style='color: ").append(getProcessableColor()).append(";'>");
-                        
-                        if (isArchive) {
-                            html.append("📦 "); // Archive icon
-                        } else {
-                            html.append("📁 "); // Folder icon
-                        }
-                        
+                        html.append(isArchive ? "📦 " : "📁 ");
                         html.append("<b>").append(fileName).append("</b>");
-                        
-                        if (isArchive) {
-                            html.append(" (Archive)");
-                        }
+                        if (isArchive) html.append(" (Archive)");
                         html.append("</span>");
                     } else {
-                        // Files not to process are shown in gray
                         html.append("<span style='color: ").append(getIgnoredColor()).append(";'>");
                         html.append("📄 ").append(fileName);
                         html.append("</span>");
                     }
-                    
+
                     html.append("</div>");
                 }
-                
+
                 html.append("</div>");
             }
         } catch (Exception e) {
@@ -667,13 +685,63 @@ public class MangaPagesSplitterUI extends JFrame {
         inputFilesPane.setText(html.toString());
     }
 
-    /**
-     * Checks if a file is an archive (zip, cbz, rar, cbr)
-     */
     private boolean isArchiveFile(String filePath) {
         String lowerPath = filePath.toLowerCase();
-        return lowerPath.endsWith(".zip") || lowerPath.endsWith(".cbz") || 
+        return lowerPath.endsWith(".zip") || lowerPath.endsWith(".cbz") ||
                lowerPath.endsWith(".rar") || lowerPath.endsWith(".cbr");
+    }
+
+    private boolean isImageFile(String filePath) {
+        String lower = filePath.toLowerCase();
+        return lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") ||
+               lower.endsWith(".gif") || lower.endsWith(".bmp") || lower.endsWith(".webp");
+    }
+
+    private boolean hasDirectImages(File dir) {
+        File[] files = dir.listFiles();
+        if (files == null) return false;
+        for (File f : files) {
+            if (f.isFile() && isImageFile(f.getName())) return true;
+        }
+        return false;
+    }
+
+    private boolean hasAnyImages(File dir) {
+        File[] files = dir.listFiles();
+        if (files == null) return false;
+        for (File f : files) {
+            if (f.isFile() && isImageFile(f.getName())) return true;
+            if (f.isDirectory() && hasAnyImages(f)) return true;
+        }
+        return false;
+    }
+
+    private void appendDirectoryTree(StringBuilder html, File dir, int depth) {
+        File[] children = dir.listFiles(File::isDirectory);
+        if (children == null || children.length == 0) return;
+        java.util.Arrays.sort(children, (a, b) -> a.getName().compareToIgnoreCase(b.getName()));
+
+        for (File child : children) {
+            boolean hasImages = hasDirectImages(child);
+            boolean hasAny = hasAnyImages(child);
+            int marginLeft = depth * 20;
+
+            html.append("<div style='margin: 2px 0; margin-left: ").append(marginLeft).append("px;'>");
+            if (hasImages) {
+                html.append("<span style='color: ").append(getProcessableColor()).append(";'>");
+                html.append("📁 <b>").append(child.getName()).append("</b>");
+                html.append("</span>");
+            } else if (hasAny) {
+                html.append("📁 ").append(child.getName());
+            } else {
+                html.append("<span style='color: ").append(getIgnoredColor()).append(";'>");
+                html.append("📁 ").append(child.getName());
+                html.append("</span>");
+            }
+            html.append("</div>");
+
+            appendDirectoryTree(html, child, depth + 1);
+        }
     }
 
     private void updatePreview() {
@@ -687,6 +755,11 @@ public class MangaPagesSplitterUI extends JFrame {
             text.append("Folder: " + rootFolder + "\n");
         }
         
+        // Flatten mode
+        if (flattenDirectories) {
+            text.append("Directory mode: Flatten — one output file per nested manga folder\n");
+        }
+
         // Splitting mode
         text.append("Splitting: ");
         switch (splitMode) {
@@ -765,6 +838,9 @@ public class MangaPagesSplitterUI extends JFrame {
         // What will happen
         text.append("THE PROGRAM WILL:\n");
         text.append("- Extract all archive files (CBZ, CBR, ZIP, RAR)\n");
+        if (flattenDirectories) {
+            text.append("- Create one output file per nested manga sub-folder\n");
+        }
         
         // Add cropping step if needed
         if (cropLeft > 0 || cropRight > 0 || cropTop > 0 || cropBottom > 0) {
@@ -872,8 +948,9 @@ public class MangaPagesSplitterUI extends JFrame {
                     // Pass the UI instance, output format, and crop values
                     MangaPagesSplitter.processWithUI(
                         rootFolder, splitMode, isJapaneseManga, deleteOriginals,
-                        skipImagesFromStart, skipImagesFromEnd, rotateWideImages, 
+                        skipImagesFromStart, skipImagesFromEnd, rotateWideImages,
                         outputFormat, cropLeft, cropRight, cropTop, cropBottom,
+                        flattenDirectories,
                         MangaPagesSplitterUI.this);
                     
                 } catch (Exception e) {
@@ -945,6 +1022,7 @@ public class MangaPagesSplitterUI extends JFrame {
             setRotationPanelEnabled(false);
         }
         
+        flattenDirectoriesCheckbox.setEnabled(!processing);
         keepFilesRadio.setEnabled(!processing);
         deleteFilesRadio.setEnabled(!processing);
         
