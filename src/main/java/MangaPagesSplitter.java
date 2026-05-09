@@ -13,6 +13,8 @@ import java.io.*;
 import java.nio.file.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.*;
@@ -56,7 +58,7 @@ public class MangaPagesSplitter {
             String rootFolder, int splitMode, boolean isJapaneseManga, boolean deleteOriginals,
             int skipImagesFromStart, int skipImagesFromEnd, boolean rotateWideImages, 
             String outputFormat, int cropLeft, int cropRight, int cropTop, int cropBottom,
-            boolean flattenDirectories,
+            boolean flattenDirectories, boolean useCustomTitle, String customTitle,
             MangaPagesSplitterUI uiInstance) throws IOException {
         
         ui = uiInstance;
@@ -124,6 +126,12 @@ public class MangaPagesSplitter {
                         outputName = nameBuilder.toString();
                     } else {
                         outputName = folder.getFileName().toString();
+                    }
+
+                    // Apply custom title if enabled: replace outputName with "<title> <number>"
+                    if (useCustomTitle && customTitle != null && !customTitle.isEmpty()) {
+                        String number = extractLastNumber(folder.getFileName().toString());
+                        outputName = customTitle + (number.isEmpty() ? "" : " " + number);
                     }
 
                     logMessage("Processing folder: " + outputName);
@@ -747,6 +755,13 @@ public class MangaPagesSplitter {
             }
         }
         return false;
+    }
+
+    private static String extractLastNumber(String name) {
+        Matcher m = Pattern.compile("\\d+(?:-\\d+)?").matcher(name);
+        String last = "";
+        while (m.find()) last = m.group();
+        return last;
     }
 
     private static boolean isArchiveFile(String filePath) {

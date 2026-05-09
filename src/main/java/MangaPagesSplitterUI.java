@@ -4,6 +4,7 @@ import com.formdev.flatlaf.FlatLightLaf;
 
 import javax.swing.*;
 import javax.swing.border.*;
+import javax.swing.text.*;
 import java.awt.*;
 import javax.swing.event.ChangeListener;
 import java.awt.event.*;
@@ -24,6 +25,8 @@ public class MangaPagesSplitterUI extends JFrame {
     private JSpinner skipStartSpinner, skipEndSpinner;
     private JCheckBox rotateWideImagesCheckbox;
     private JCheckBox flattenDirectoriesCheckbox;
+    private JCheckBox customTitleCheckbox;
+    private JTextField customTitleField;
     
     // Crop options
     private JSpinner cropLeftSpinner, cropRightSpinner, cropTopSpinner, cropBottomSpinner;
@@ -52,11 +55,13 @@ public class MangaPagesSplitterUI extends JFrame {
     private String rootFolder = "";
     private String outputFormat = "cbz"; // Default output format
     private boolean flattenDirectories = false;
+    private boolean useCustomTitle = false;
+    private String customTitle = "";
     
     public MangaPagesSplitterUI() {
         setTitle("Manga Pages Splitter");
-        setSize(900, 825); // Increased height to show all panels
-        setMinimumSize(new Dimension(800, 825)); // Also increased minimum height
+        setSize(900, 975);
+        setMinimumSize(new Dimension(800, 975));
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
         
@@ -118,6 +123,19 @@ public class MangaPagesSplitterUI extends JFrame {
         rootFolderField = new JTextField(30);
         browseButton = new JButton("Browse...");
         flattenDirectoriesCheckbox = new JCheckBox("Flatten directory tree (one output file per sub-folder)");
+        customTitleCheckbox = new JCheckBox("Custom output title");
+        customTitleField = new JTextField(18);
+        customTitleField.setEnabled(false);
+        ((AbstractDocument) customTitleField.getDocument()).setDocumentFilter(new DocumentFilter() {
+            @Override
+            public void insertString(FilterBypass fb, int offset, String string, AttributeSet attr) throws BadLocationException {
+                if (string != null) super.insertString(fb, offset, sanitizeForFilename(string), attr);
+            }
+            @Override
+            public void replace(FilterBypass fb, int offset, int length, String text, AttributeSet attrs) throws BadLocationException {
+                if (text != null) super.replace(fb, offset, length, sanitizeForFilename(text), attrs);
+            }
+        });
         
         // Splitting options
         ButtonGroup splitGroup = new ButtonGroup();
@@ -203,13 +221,16 @@ public class MangaPagesSplitterUI extends JFrame {
         // North panel: root folder selection
         JPanel northPanel = new JPanel();
         northPanel.setLayout(new BoxLayout(northPanel, BoxLayout.Y_AXIS));
-        northPanel.setBorder(new EmptyBorder(10, 10, 5, 10));
-        JPanel folderPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-        folderPanel.add(new JLabel("Input files location:"));
+        northPanel.setBorder(BorderFactory.createCompoundBorder(
+            new EmptyBorder(8, 10, 5, 10),
+            BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(), "Input")
+        ));
+        JPanel folderPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
+        folderPanel.add(new JLabel("Location:"));
         folderPanel.add(rootFolderField);
         folderPanel.add(browseButton);
         northPanel.add(folderPanel);
-        JPanel flattenPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+        JPanel flattenPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
         flattenPanel.add(flattenDirectoriesCheckbox);
         northPanel.add(flattenPanel);
         add(northPanel, BorderLayout.NORTH);
@@ -321,6 +342,27 @@ public class MangaPagesSplitterUI extends JFrame {
         westPanel.add(deletionPanel);
         westPanel.add(Box.createRigidArea(new Dimension(0, 8)));
         
+        // Panel for output naming
+        JPanel namingPanel = createSectionPanel("Output Naming", 280, 85);
+        namingPanel.setLayout(new BoxLayout(namingPanel, BoxLayout.Y_AXIS));
+
+        customTitleCheckbox.setAlignmentX(LEFT_ALIGNMENT);
+        namingPanel.add(customTitleCheckbox);
+
+        JPanel titleFieldPanel = createFixedHeightPanel(30);
+        titleFieldPanel.add(new JLabel("Title:"));
+        titleFieldPanel.add(customTitleField);
+        namingPanel.add(titleFieldPanel);
+
+        JPanel namingHintPanel = createFixedHeightPanel(18);
+        JLabel namingHintLabel = new JLabel("Folder number is appended automatically");
+        namingHintLabel.setFont(new Font("SansSerif", Font.ITALIC, 10));
+        namingHintPanel.add(namingHintLabel);
+        namingPanel.add(namingHintPanel);
+
+        westPanel.add(namingPanel);
+        westPanel.add(Box.createRigidArea(new Dimension(0, 8)));
+
         // Panel for output format - moved to be the last panel
         JPanel outputFormatPanel = createSectionPanel("Output Format", 280, 139);
         outputFormatPanel.setLayout(new BoxLayout(outputFormatPanel, BoxLayout.Y_AXIS));
@@ -416,18 +458,38 @@ public class MangaPagesSplitterUI extends JFrame {
             updatePreview();
         });
 
+        customTitleCheckbox.addActionListener(e -> {
+            useCustomTitle = customTitleCheckbox.isSelected();
+            customTitleField.setEnabled(useCustomTitle);
+            updatePreview();
+        });
+
+        customTitleField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { customTitle = customTitleField.getText(); updatePreview(); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { customTitle = customTitleField.getText(); updatePreview(); }
+            public void changedUpdate(javax.swing.event.DocumentEvent e) { customTitle = customTitleField.getText(); updatePreview(); }
+        });
+
         // Folder selection - update to refresh input files panel
         browseButton.addActionListener(e -> {
             JFileChooser chooser = new JFileChooser();
             chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
             chooser.setDialogTitle("Select Root Directory for Manga Processing");
-            
+            if (!rootFolder.isEmpty()) {
+                chooser.setCurrentDirectory(new File(rootFolder));
+            }
             if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
                 rootFolder = chooser.getSelectedFile().getAbsolutePath();
+                rootFolderField.setForeground(UIManager.getColor("TextField.foreground"));
                 rootFolderField.setText(rootFolder);
-                updateInputFilesPane(); // Show files in folder
-                updatePreview();        // Update preview text in log area
+                updateInputFilesPane();
+                updatePreview();
             }
+        });
+
+        rootFolderField.addActionListener(e -> applyFolderFieldPath());
+        rootFolderField.addFocusListener(new FocusAdapter() {
+            @Override public void focusLost(FocusEvent e) { applyFolderFieldPath(); }
         });
         
         // Splitting option changes
@@ -685,6 +747,32 @@ public class MangaPagesSplitterUI extends JFrame {
         inputFilesPane.setText(html.toString());
     }
 
+    private void applyFolderFieldPath() {
+        String text = rootFolderField.getText().trim();
+        if (text.isEmpty() || text.equals(rootFolder)) return;
+        File dir = new File(text);
+        if (dir.isDirectory()) {
+            rootFolder = dir.getAbsolutePath();
+            rootFolderField.setForeground(UIManager.getColor("TextField.foreground"));
+            rootFolderField.setText(rootFolder);
+            updateInputFilesPane();
+            updatePreview();
+        } else {
+            rootFolderField.setForeground(UIManager.getColor("TextField.errorForeground") != null
+                ? UIManager.getColor("TextField.errorForeground") : Color.RED);
+        }
+    }
+
+    private static String sanitizeForFilename(String input) {
+        if (input == null) return "";
+        boolean isWindows = System.getProperty("os.name", "").toLowerCase().contains("win");
+        if (isWindows) {
+            return input.replaceAll("[\\\\/:*?\"<>|\\u0000-\\u001F]", "");
+        } else {
+            return input.replaceAll("[/\\u0000]", "");
+        }
+    }
+
     private boolean isArchiveFile(String filePath) {
         String lowerPath = filePath.toLowerCase();
         return lowerPath.endsWith(".zip") || lowerPath.endsWith(".cbz") ||
@@ -758,6 +846,12 @@ public class MangaPagesSplitterUI extends JFrame {
         // Flatten mode
         if (flattenDirectories) {
             text.append("Directory mode: Flatten — one output file per nested manga folder\n");
+        }
+
+        // Custom title
+        if (useCustomTitle) {
+            String t = customTitleField.getText().trim();
+            text.append("Output title: ").append(t.isEmpty() ? "(none entered)" : "\"" + t + " <number>\"").append("\n");
         }
 
         // Splitting mode
@@ -950,7 +1044,7 @@ public class MangaPagesSplitterUI extends JFrame {
                         rootFolder, splitMode, isJapaneseManga, deleteOriginals,
                         skipImagesFromStart, skipImagesFromEnd, rotateWideImages,
                         outputFormat, cropLeft, cropRight, cropTop, cropBottom,
-                        flattenDirectories,
+                        flattenDirectories, useCustomTitle, customTitleField.getText().trim(),
                         MangaPagesSplitterUI.this);
                     
                 } catch (Exception e) {
@@ -1023,6 +1117,8 @@ public class MangaPagesSplitterUI extends JFrame {
         }
         
         flattenDirectoriesCheckbox.setEnabled(!processing);
+        customTitleCheckbox.setEnabled(!processing);
+        customTitleField.setEnabled(!processing && useCustomTitle);
         keepFilesRadio.setEnabled(!processing);
         deleteFilesRadio.setEnabled(!processing);
         
