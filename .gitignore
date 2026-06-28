@@ -6,6 +6,11 @@ target/
 *.log
 /certs/*
 
+# Built release artifacts — distributed via GitHub Releases, not committed
+releases/
+/dist/
+release-notes.md
+
 ### IntelliJ IDEA ###
 .idea/modules.xml
 .idea/jarRepositories.xml

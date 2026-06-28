@@ -53,16 +53,16 @@ It is using Junrar (a third party library) in order to extract from RAR archives
 
 ### On Windows
 #### Executable
-Download the MangaPagesSplitter.exe from the release directory. Double click on it.
+Download `MangaPagesSplitter.exe` from the latest [GitHub Release](https://github.com/flochrislas/MangaPagesSplitter/releases/latest). Double click on it.
 I have signed the executable file using SignTool from the Window's SDK, but the certificate I used is self-signed.
 #### Batch file
-You can use the batch file MangaPagesSplitter.bat from the release directory in order to run the program as a JAR file (you need the JAR file in the same directory) without typing any command (double click the batch file). You need Java installed on your system for this to work.
+You can use the batch file `MangaPagesSplitter.bat` from the latest [GitHub Release](https://github.com/flochrislas/MangaPagesSplitter/releases/latest) in order to run the program as a JAR file (you need `MangaPagesSplitter.jar` in the same directory) without typing any command (double click the batch file). You need Java installed on your system for this to work.
 #### JAR file
 You can enter the java command to run the JAR file from a console. You need Java installed on your system for this to work.
 
 ### On Linux
 #### Bash script
-You can use the MangaPagesSplitter.sh from the release directory in order to run the program as a JAR file (you need the JAR file in the same directory). You need Java installed on your system for this to work.
+You can use `MangaPagesSplitter.sh` from the latest [GitHub Release](https://github.com/flochrislas/MangaPagesSplitter/releases/latest) in order to run the program as a JAR file (you need `MangaPagesSplitter.jar` in the same directory). You need Java installed on your system for this to work.
 #### JAR file
 You can enter the java command to run the JAR file from a console. You need Java installed on your system for this to work.
 

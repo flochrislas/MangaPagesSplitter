@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and publish GitHub Release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 8 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+          cache: maven
+
+      - name: Derive version from tag
+        id: ver
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag.TrimStart('v')
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Releasing version $version (tag $tag)"
+
+      - name: Verify pom.xml version matches tag
+        shell: pwsh
+        run: |
+          $pomVersion = (Select-Xml -Path pom.xml -XPath "/*[local-name()='project']/*[local-name()='version']").Node.InnerText
+          $expected = "${{ steps.ver.outputs.version }}"
+          if ($pomVersion -ne $expected) {
+            Write-Error "pom.xml version ($pomVersion) does not match tag version ($expected). Bump pom.xml before tagging."
+            exit 1
+          }
+          Write-Host "pom.xml version matches tag: $pomVersion"
+
+      - name: Build with Maven
+        run: mvn -B -ntp package
+
+      - name: Stage release artifacts
+        shell: pwsh
+        run: |
+          $version = "${{ steps.ver.outputs.version }}"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item "target/MangaPagesSplitter-$version-jar-with-dependencies.jar" "dist/MangaPagesSplitter.jar"
+          Copy-Item "target/MangaPagesSplitter.exe" "dist/MangaPagesSplitter.exe"
+          Copy-Item "scripts/MangaPagesSplitter.bat" "dist/MangaPagesSplitter.bat"
+          Copy-Item "scripts/MangaPagesSplitter.sh"  "dist/MangaPagesSplitter.sh"
+          Get-ChildItem dist | Format-Table Name, Length
+
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        shell: pwsh
+        run: |
+          $version = "${{ steps.ver.outputs.version }}"
+          $notesPath = "release-notes.md"
+          if (Test-Path CHANGELOG.md) {
+            $content = Get-Content CHANGELOG.md -Raw
+            $pattern = "(?ms)^## \[$([regex]::Escape($version))\][^\n]*\n(.*?)(?=^## \[|\Z)"
+            $match = [regex]::Match($content, $pattern)
+            if ($match.Success) {
+              $match.Groups[1].Value.Trim() | Out-File -FilePath $notesPath -Encoding utf8
+              Write-Host "Extracted release notes for $version from CHANGELOG.md"
+            } else {
+              "Release $version" | Out-File -FilePath $notesPath -Encoding utf8
+              Write-Host "No CHANGELOG entry found for $version; using fallback notes."
+            }
+          } else {
+            "Release $version" | Out-File -FilePath $notesPath -Encoding utf8
+          }
+          "path=$notesPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: MangaPagesSplitter ${{ github.ref_name }}
+          body_path: ${{ steps.notes.outputs.path }}
+          files: |
+            dist/MangaPagesSplitter.jar
+            dist/MangaPagesSplitter.exe
+            dist/MangaPagesSplitter.bat
+            dist/MangaPagesSplitter.sh
+          fail_on_unmatched_files: true

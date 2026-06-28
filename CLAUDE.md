@@ -21,6 +21,21 @@ java -jar target/MangaPagesSplitter-1.5-jar-with-dependencies.jar
 
 There are no tests configured in this project.
 
+## Releasing
+
+Releases are automated by GitHub Actions (`.github/workflows/release.yml`) on
+`v*` tag push. **Do not commit built artifacts to the repo** — the
+`releases/` folder is gitignored. See `RELEASING.md` for the full process.
+
+Short version:
+
+1. Update `CHANGELOG.md` (move `[Unreleased]` items under a new `[X.Y.Z]` section).
+2. Bump `<version>` in `pom.xml`.
+3. `git commit -m "Release vX.Y.Z"`
+4. `git tag -a vX.Y.Z -m "Release vX.Y.Z" && git push --follow-tags`
+
+CI builds the JAR + EXE, extracts the matching CHANGELOG section as release notes, and publishes the GitHub Release with all four assets (`.jar`, `.exe`, `.bat`, `.sh`).
+
 ## Architecture
 
 The application consists of two classes with no package structure (default package):
