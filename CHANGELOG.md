@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Windows EXE no longer opens an extra console window when launched.
+  Closing that console previously also killed the app. The launcher is now
+  built in GUI mode; Java-startup errors are shown as a dialog instead.
+
 ## [2.2.0] - 2026-05-09
 
 ### Added

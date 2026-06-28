@@ -97,7 +97,7 @@
               <goal>launch4j</goal>
             </goals>
             <configuration>
-              <headerType>console</headerType>
+              <headerType>gui</headerType>
               <outfile>target/MangaPagesSplitter.exe</outfile>
               <jar>target/MangaPagesSplitter-${app.version}-jar-with-dependencies.jar</jar>
               <errTitle>MangaPagesSplitter</errTitle>
