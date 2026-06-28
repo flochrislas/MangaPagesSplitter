@@ -24,11 +24,13 @@ Built artifacts are **not** committed to the repository.
    ```
 5. GitHub Actions will:
    - verify that `pom.xml` version matches the tag,
-   - run `mvn package` (producing the JAR and the Windows EXE),
+   - run `mvn package` (producing the JAR and a self-contained Windows
+     portable ZIP via `jpackage`),
    - extract the matching section from `CHANGELOG.md` as release notes,
    - create the GitHub Release with these four assets attached:
      - `MangaPagesSplitter.jar`
-     - `MangaPagesSplitter.exe`
+     - `MangaPagesSplitter-windows-X.Y.Z.zip` (portable Windows bundle,
+       includes a bundled Java 17 runtime — no Java needed on the user's PC)
      - `MangaPagesSplitter.bat`
      - `MangaPagesSplitter.sh`
 
@@ -38,13 +40,17 @@ and `git tag -d vX.Y.Z`), and try again.
 
 ## Signed EXE releases (optional)
 
-The workflow currently builds an unsigned EXE. To produce a signed EXE,
-build locally with the `sign-exe` profile and upload the signed binary
-manually to the GitHub Release created by CI:
+The workflow currently builds an unsigned launcher EXE inside the
+portable ZIP. To produce a signed EXE, build locally with the
+`sign-exe` profile and re-upload a signed ZIP manually to the GitHub
+Release created by CI:
 
 ```
 mvn package -Psign-exe -Dsigning.keystore=path\to\keystore.pfx -Dsigning.storepass=PASSWORD
 ```
+
+The signed launcher is at `target\jpackage\MangaPagesSplitter\MangaPagesSplitter.exe`;
+re-zip the `target\jpackage\MangaPagesSplitter\` folder before uploading.
 
 ## Keeping local tags in sync
 

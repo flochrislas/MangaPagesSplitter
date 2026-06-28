@@ -52,9 +52,12 @@ It is using Junrar (a third party library) in order to extract from RAR archives
 ## How to use
 
 ### On Windows
-#### Executable
-Download `MangaPagesSplitter.exe` from the latest [GitHub Release](https://github.com/flochrislas/MangaPagesSplitter/releases/latest). Double click on it.
-I have signed the executable file using SignTool from the Window's SDK, but the certificate I used is self-signed.
+#### Portable bundle (recommended, no Java required)
+Download `MangaPagesSplitter-windows-<version>.zip` from the latest
+[GitHub Release](https://github.com/flochrislas/MangaPagesSplitter/releases/latest),
+unzip it anywhere, and double-click `MangaPagesSplitter.exe` inside the
+extracted `MangaPagesSplitter` folder. The bundle ships with its own
+Java runtime, so nothing else needs to be installed.
 #### Batch file
 You can use the batch file `MangaPagesSplitter.bat` from the latest [GitHub Release](https://github.com/flochrislas/MangaPagesSplitter/releases/latest) in order to run the program as a JAR file (you need `MangaPagesSplitter.jar` in the same directory) without typing any command (double click the batch file). You need Java installed on your system for this to work.
 #### JAR file

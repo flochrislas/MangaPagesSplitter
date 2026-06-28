@@ -9,14 +9,13 @@
   <inceptionYear>2025</inceptionYear>
   <description>Tool to split double page manga spreads into single pages</description>
   <artifactId>MangaPagesSplitter</artifactId>
-  <version>2.2.1</version>
+  <version>2.2.2</version>
   <packaging>jar</packaging>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <skip.signing>true</skip.signing>
     <app.version>${project.version}</app.version>
-    <app.version.formatted>${project.version}.0</app.version.formatted>
   </properties>
 
   <dependencies>
@@ -84,51 +83,78 @@
           </execution>
         </executions>
       </plugin>
-      <!-- Allows to build the application as a Windows exe file -->
+      <!-- Stage the fat JAR alone into a clean folder for jpackage's input arg.
+           jpackage copies every file from its input dir into the app's "app"
+           folder, so we point it at a directory containing only the fat JAR. -->
       <plugin>
-        <groupId>com.akathist.maven.plugins.launch4j</groupId>
-        <artifactId>launch4j-maven-plugin</artifactId>
-        <version>2.5.3</version>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>3.3.1</version>
         <executions>
           <execution>
-            <id>l4j-gui</id>
+            <id>stage-jar-for-jpackage</id>
             <phase>package</phase>
             <goals>
-              <goal>launch4j</goal>
+              <goal>copy-resources</goal>
             </goals>
             <configuration>
-              <headerType>gui</headerType>
-              <outfile>target/MangaPagesSplitter.exe</outfile>
-              <jar>target/MangaPagesSplitter-${app.version}-jar-with-dependencies.jar</jar>
-              <errTitle>MangaPagesSplitter</errTitle>
-              <classPath>
-                <mainClass>MangaPagesSplitter</mainClass>
-              </classPath>
-              <jre>
-                <minVersion>1.8.0</minVersion>
-                <path>%JAVA_HOME%;%PATH%</path>
-              </jre>
-              <versionInfo>
-                <fileVersion>${app.version.formatted}</fileVersion>
-                <txtFileVersion>${app.version.formatted}</txtFileVersion>
-                <fileDescription>MangaPagesSplitter Application</fileDescription>
-                <productVersion>${app.version.formatted}</productVersion>
-                <txtProductVersion>${app.version.formatted}</txtProductVersion>
-                <productName>MangaPagesSplitter</productName>
-                <internalName>MangaPagesSplitter</internalName>
-                <originalFilename>MangaPagesSplitter.exe</originalFilename>
-              </versionInfo>
+              <outputDirectory>${project.build.directory}/jpackage-input</outputDirectory>
+              <resources>
+                <resource>
+                  <directory>${project.build.directory}</directory>
+                  <includes>
+                    <include>${project.artifactId}-${app.version}-jar-with-dependencies.jar</include>
+                  </includes>
+                </resource>
+              </resources>
             </configuration>
           </execution>
         </executions>
       </plugin>
       <!-- Allows to execute external program during maven build -->
-      <!-- To sign the app -->
+      <!-- Used to (1) build a self-contained Windows app image with jpackage
+           and (2) optionally sign the resulting EXE with signtool. -->
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>exec-maven-plugin</artifactId>
         <version>3.5.0</version>
         <executions>
+          <!-- Build a self-contained Windows app-image (launcher EXE + bundled JRE).
+               Replaces the previous launch4j-based EXE, which triggered antivirus
+               false positives (Bitdefender Advanced Threat Defense, etc.) because
+               malware authors abuse the same launch4j stub. -->
+          <execution>
+            <id>jpackage</id>
+            <phase>package</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <executable>jpackage</executable>
+              <arguments>
+                <argument>--type</argument>
+                <argument>app-image</argument>
+                <argument>--name</argument>
+                <argument>MangaPagesSplitter</argument>
+                <argument>--app-version</argument>
+                <argument>${app.version}</argument>
+                <argument>--vendor</argument>
+                <argument>ArdaCreation</argument>
+                <argument>--description</argument>
+                <argument>${project.description}</argument>
+                <argument>--input</argument>
+                <argument>${project.build.directory}/jpackage-input</argument>
+                <argument>--main-jar</argument>
+                <argument>${project.artifactId}-${app.version}-jar-with-dependencies.jar</argument>
+                <argument>--main-class</argument>
+                <argument>MangaPagesSplitter</argument>
+                <argument>--dest</argument>
+                <argument>${project.build.directory}/jpackage</argument>
+                <argument>--add-modules</argument>
+                <argument>java.desktop,java.logging,java.naming,java.prefs,java.xml,jdk.unsupported,jdk.zipfs</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <!-- Optional Authenticode signing of the jpackage launcher EXE. -->
           <execution>
             <id>sign-exe</id>
             <phase>package</phase>
@@ -151,7 +177,7 @@
                 <argument>SHA256</argument>
                 <argument>/d</argument>
                 <argument>MangaPagesSplitter</argument>
-                <argument>${project.build.directory}\MangaPagesSplitter.exe</argument>
+                <argument>${project.build.directory}\jpackage\MangaPagesSplitter\MangaPagesSplitter.exe</argument>
               </arguments>
               <skip>${skip.signing}</skip>
             </configuration>

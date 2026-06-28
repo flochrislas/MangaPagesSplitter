@@ -17,11 +17,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Set up JDK 8 (Temurin)
+      - name: Set up JDK 17 (Temurin)
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '8'
+          java-version: '17'
           cache: maven
 
       - name: Derive version from tag
@@ -53,7 +53,9 @@ jobs:
           $version = "${{ steps.ver.outputs.version }}"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item "target/MangaPagesSplitter-$version-jar-with-dependencies.jar" "dist/MangaPagesSplitter.jar"
-          Copy-Item "target/MangaPagesSplitter.exe" "dist/MangaPagesSplitter.exe"
+          # jpackage produced a self-contained Windows app-image at
+          # target/jpackage/MangaPagesSplitter/ — ship it as a portable ZIP.
+          Compress-Archive -Path "target/jpackage/MangaPagesSplitter" -DestinationPath "dist/MangaPagesSplitter-windows-$version.zip"
           Copy-Item "scripts/MangaPagesSplitter.bat" "dist/MangaPagesSplitter.bat"
           Copy-Item "scripts/MangaPagesSplitter.sh"  "dist/MangaPagesSplitter.sh"
           Get-ChildItem dist | Format-Table Name, Length
@@ -88,7 +90,7 @@ jobs:
           body_path: ${{ steps.notes.outputs.path }}
           files: |
             dist/MangaPagesSplitter.jar
-            dist/MangaPagesSplitter.exe
+            dist/MangaPagesSplitter-windows-${{ steps.ver.outputs.version }}.zip
             dist/MangaPagesSplitter.bat
             dist/MangaPagesSplitter.sh
           fail_on_unmatched_files: true

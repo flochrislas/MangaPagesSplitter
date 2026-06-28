@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.2] - 2026-06-28
+
+### Changed
+- Windows distribution is now a self-contained portable ZIP
+  (`MangaPagesSplitter-windows-<version>.zip`) built with `jpackage`.
+  It bundles a trimmed Java 17 runtime, so users no longer need Java
+  installed on their machine and just run the included
+  `MangaPagesSplitter.exe`.
+- Build now requires JDK 17+ (for `jpackage`). The library JAR still
+  targets Java 8 bytecode, so the standalone `.jar` keeps working on
+  Java 8+.
+
+### Removed
+- Standalone `MangaPagesSplitter.exe` asset (the previous launch4j
+  wrapper). It was flagged as malware by Bitdefender's Advanced Threat
+  Defense heuristic, a known false positive caused by malware authors
+  reusing the launch4j stub. The jpackage-based portable bundle
+  replaces it.
+
 ## [2.2.1] - 2026-06-28
 
 ### Fixed
@@ -63,7 +82,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial public release: batch-split double-page manga spreads into single
   pages, with archive (CBZ/CBR/ZIP/RAR) input support.
 
-[Unreleased]: https://github.com/flochrislas/MangaPagesSplitter/compare/v2.2.1...HEAD
+[Unreleased]: https://github.com/flochrislas/MangaPagesSplitter/compare/v2.2.2...HEAD
+[2.2.2]: https://github.com/flochrislas/MangaPagesSplitter/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/flochrislas/MangaPagesSplitter/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/flochrislas/MangaPagesSplitter/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/flochrislas/MangaPagesSplitter/compare/v2.0.0...v2.1.0

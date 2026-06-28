@@ -4,19 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MangaPagesSplitter is a Java Swing desktop application that batch-processes manga/comic archives by splitting double-page spread images into single pages, with optional cropping, rotation, and re-archiving. It targets Java 8+.
+MangaPagesSplitter is a Java Swing desktop application that batch-processes manga/comic archives by splitting double-page spread images into single pages, with optional cropping, rotation, and re-archiving. The library JAR targets Java 8+; the bundled Windows app-image ships with its own Java 17 runtime.
 
 ## Build Commands
 
 ```bash
-# Compile and package (JAR + Windows EXE)
+# Compile and package: produces JAR + self-contained Windows app-image
+# (target/jpackage/MangaPagesSplitter/). Build requires JDK 17+ for jpackage.
 mvn package
 
-# Package with code signing for the EXE
+# Package with code signing for the jpackage launcher EXE
 mvn package -Psign-exe -Dsigning.keystore=path\to\keystore.pfx -Dsigning.storepass=password
 
-# Run the application
-java -jar target/MangaPagesSplitter-1.5-jar-with-dependencies.jar
+# Run the application from the fat JAR
+java -jar target/MangaPagesSplitter-<version>-jar-with-dependencies.jar
 ```
 
 There are no tests configured in this project.
@@ -34,7 +35,7 @@ Short version:
 3. `git commit -m "Release vX.Y.Z"`
 4. `git tag -a vX.Y.Z -m "Release vX.Y.Z" && git push --follow-tags`
 
-CI builds the JAR + EXE, extracts the matching CHANGELOG section as release notes, and publishes the GitHub Release with all four assets (`.jar`, `.exe`, `.bat`, `.sh`).
+CI builds the JAR + the Windows portable ZIP, extracts the matching CHANGELOG section as release notes, and publishes the GitHub Release with all four assets (`.jar`, `MangaPagesSplitter-windows-X.Y.Z.zip`, `.bat`, `.sh`).
 
 ## Architecture
 
@@ -56,4 +57,7 @@ The UI calls `MangaPagesSplitter.processWithUI()`, passing all configuration. Pr
 ## Dependencies
 
 - **junrar 7.5.5** — RAR archive extraction (RAR4 and below)
-- **launch4j-maven-plugin** — Generates Windows `.exe` wrapper during `mvn package`
+- **flatlaf 3.7** — Modern Swing look-and-feel with dark/light themes
+- **jpackage** (JDK 14+ tool, invoked via `exec-maven-plugin`) — Produces
+  the self-contained Windows app-image (launcher EXE + bundled JRE) during
+  `mvn package`.
