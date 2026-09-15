@@ -133,8 +133,25 @@ java -jar "target\MangaPagesSplitter-<version>-jar-with-dependencies.jar"
 No automated tests exist. The previous session verified each change with tiny
 synthetic in-code reproductions of the failing image, then had the user re-run the
 real batch and share the processing-log `Spine detection: ...` / `Outer crop: ...`
-lines. Ask the user to test against the real `Dragon Quest` folder above and share
-the log lines and before/after screenshots.
+lines.
+
+**You can (and should) evaluate results directly against the committed test
+images** in `test_images\` — you do not need the user or the `N:` drive to iterate:
+
+- `test_images\0028.jpg` is the concrete regression target for this task. A correct
+  fix must trim its large left/right white margins despite the faint dark
+  "parasite" pixels on the right border. `test_images\0041.jpg` is the
+  don't-regress spine-split case.
+- Point the app at a folder containing these images (or use the `DiagPage28*.java`
+  helpers, which already load `test_images\0028.jpg` via a relative path and dump
+  per-column content counts), inspect the cropped output / log lines, and confirm
+  the margin is removed on `0028` while `0041` still splits correctly.
+- Compile a diagnostic against the project classes, e.g. from the repo root:
+  `javac -cp target\classes DiagPage28.java && java -cp "target\classes;." DiagPage28`
+  (run `mvn compile` first so `target\classes` exists).
+
+Then, once it passes locally, ask the user to re-run the real `Dragon Quest` folder
+and share the log lines and before/after screenshots as a final confirmation.
 
 ## UI notes (in case a new option is warranted)
 
