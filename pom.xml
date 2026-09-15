@@ -31,6 +31,13 @@
       <artifactId>flatlaf</artifactId>
       <version>3.7</version>
     </dependency>
+    <!-- Unit tests (JUnit 5.11 is the last line supporting a Java 8 runtime) -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.11.4</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <profiles>
@@ -60,9 +67,19 @@
           </compilerArgs>
         </configuration>
       </plugin>
+      <!-- Runs the JUnit 5 tests under src/test/java -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.2</version>
+        <configuration>
+          <argLine>-Djava.awt.headless=true</argLine>
+        </configuration>
+      </plugin>
       <!-- Allows to build the application as a JAR file -->
       <plugin>
         <artifactId>maven-assembly-plugin</artifactId>
+        <version>3.7.1</version>
         <configuration>
           <archive>
             <manifest>
