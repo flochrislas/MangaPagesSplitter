@@ -1034,13 +1034,13 @@ public class MangaPagesSplitter {
         final int minEdgeRun = 5;
 
         int leftCrop = advanceEdge(pixels, w, h, +1, 0, maxCropSide,
-                true, rowStep, bgMean, delta, minPix, minEdgeRun);
+                true, rowStep, bgMean, delta, minPix, minEdgeRun, "left");
         int rightCrop = advanceEdge(pixels, w, h, -1, w - 1, maxCropSide,
-                true, rowStep, bgMean, delta, minPix, minEdgeRun);
+                true, rowStep, bgMean, delta, minPix, minEdgeRun, "right");
         int topCrop = advanceEdge(pixels, w, h, +1, 0, maxCropTB,
-                false, colStep, bgMean, delta, minPix, minEdgeRun);
+                false, colStep, bgMean, delta, minPix, minEdgeRun, "top");
         int bottomCrop = advanceEdge(pixels, w, h, -1, h - 1, maxCropTB,
-                false, colStep, bgMean, delta, minPix, minEdgeRun);
+                false, colStep, bgMean, delta, minPix, minEdgeRun, "bottom");
 
         // Small safety padding so we do not shave line art that touches the margin.
         final int pad = 3;
@@ -1236,31 +1236,55 @@ public class MangaPagesSplitter {
      * unusually thin page-number strip) that would otherwise stop the crawler and leave
      * a huge white margin untrimmed.
      *
+     * <p>A second guard handles clusters that are wider than {@code minRun} but still
+     * clearly artefacts: the faint smear or dark shadow a scanner leaves along the very
+     * border of the sheet. Such a cluster hugs the edge, is only a handful of pixels
+     * wide, and is followed by a long stretch of pure background. Real content at a
+     * page edge never looks like that — art or a panel border keeps going inward. When
+     * the first content run starts inside {@code parasiteZone} and dies out again inside
+     * that zone with at least {@code parasiteZone} background lines behind it, the
+     * cluster is skipped and the crawl continues. See {@link #edgeParasiteEnd}.
+     *
      * @param direction +1 to scan inward from the low edge, -1 to scan inward from the high edge.
      * @param start     starting absolute coordinate (0 for low edge, w-1 or h-1 for high edge).
      * @param cap       hard maximum distance to advance (per-side safety cap).
      * @param columnScan true for left/right (scans columns), false for top/bottom (scans rows).
      * @param otherStep row-step for column scans; col-step for row scans (subsampling factor).
+     * @param sideLabel human-readable side name used in the processing log.
      * @return the distance from the edge to the first content run, or {@code cap} if none found.
      */
     private static int advanceEdge(int[] pixels, int w, int h, int direction, int start, int cap,
                                    boolean columnScan, int otherStep,
-                                   int bgMean, int delta, int minPix, int minRun) {
+                                   int bgMean, int delta, int minPix, int minRun, String sideLabel) {
+        // Border strip in which a narrow, isolated content cluster is treated as a
+        // scanner artefact instead of a content edge: ~1% of the scanned dimension,
+        // never less than 16 px (3840 px spread -> 38 px, 1400 px half -> 16 px).
+        int dim = columnScan ? w : h;
+        int parasiteZone = Math.max(16, dim / 100);
+
         int dist = 0;
         int runStart = -1;
         int runLen = 0;
         while (dist < cap) {
-            int idx = start + direction * dist;
-            int c;
-            if (columnScan) {
-                c = columnContentCount(pixels, w, idx, 0, h, otherStep, bgMean, delta);
-            } else {
-                c = rowContentCount(pixels, w, idx, 0, w, otherStep, bgMean, delta);
-            }
+            int c = lineContentCount(pixels, w, h, columnScan, start + direction * dist,
+                    otherStep, bgMean, delta);
             if (c >= minPix) {
                 if (runStart < 0) runStart = dist;
                 runLen++;
                 if (runLen >= minRun) {
+                    if (runStart < parasiteZone) {
+                        int clusterEnd = edgeParasiteEnd(pixels, w, h, direction, start, cap,
+                                columnScan, otherStep, bgMean, delta, minPix,
+                                runStart, parasiteZone);
+                        if (clusterEnd >= 0) {
+                            logMessage("Outer crop: ignoring " + (clusterEnd - runStart)
+                                    + " px edge artefact on " + sideLabel + " side");
+                            dist = clusterEnd;
+                            runStart = -1;
+                            runLen = 0;
+                            continue;
+                        }
+                    }
                     return runStart;
                 }
             } else {
@@ -1270,5 +1294,47 @@ public class MangaPagesSplitter {
             dist++;
         }
         return cap;
+    }
+
+    /**
+     * Decides whether the content run starting at distance {@code runStart} from the
+     * edge is an edge artefact. Walks inward from {@code runStart}: the cluster is an
+     * artefact if its last content line lies within {@code parasiteZone} of the edge and
+     * is followed by at least {@code parasiteZone} consecutive background lines.
+     *
+     * @return the distance of the first line after the artefact (where the crawl should
+     *         resume), or -1 if the run is real content.
+     */
+    private static int edgeParasiteEnd(int[] pixels, int w, int h, int direction, int start, int cap,
+                                       boolean columnScan, int otherStep,
+                                       int bgMean, int delta, int minPix,
+                                       int runStart, int parasiteZone) {
+        int lastContent = runStart;
+        int gap = 0;
+        int limit = Math.min(cap, parasiteZone * 2);
+        for (int d = runStart; d < limit; d++) {
+            int c = lineContentCount(pixels, w, h, columnScan, start + direction * d,
+                    otherStep, bgMean, delta);
+            if (c >= minPix) {
+                lastContent = d;
+                gap = 0;
+                if (lastContent >= parasiteZone) {
+                    return -1; // cluster extends past the border strip: real content
+                }
+            } else {
+                gap++;
+                if (gap >= parasiteZone) {
+                    return lastContent + 1;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static int lineContentCount(int[] pixels, int w, int h, boolean columnScan, int idx,
+                                        int otherStep, int bgMean, int delta) {
+        return columnScan
+                ? columnContentCount(pixels, w, idx, 0, h, otherStep, bgMean, delta)
+                : rowContentCount(pixels, w, idx, 0, w, otherStep, bgMean, delta);
     }
 }

@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of getting shaved. A `1`–`10` sensitivity spinner tunes how
   aggressive the detector is; images whose corners aren't uniform
   background (e.g. full-bleed art pages) are left untouched.
+  Narrow scanner artefacts hugging the image border (a faint smear or
+  dark shadow a few pixels wide, followed by a long stretch of blank
+  margin) are recognised and skipped, so they no longer block the
+  margin crawler and leave a wide white border untrimmed on that side.
 
 ### Changed
 - Smart autocrop and manual four-side cropping are now **mutually
