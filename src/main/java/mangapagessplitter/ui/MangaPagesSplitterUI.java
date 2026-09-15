@@ -1162,7 +1162,10 @@ public class MangaPagesSplitterUI extends JFrame implements ProcessingListener {
                     appendToLog("------------------------------");
                     appendToLog(result.summary());
                     for (String failure : result.failures) {
-                        appendToLog("  - " + failure);
+                        appendToLog("  ERROR: " + failure);
+                    }
+                    for (String warning : result.warnings) {
+                        appendToLog("  warning: " + warning);
                     }
                 } catch (CancellationException e) {
                     appendToLog("Processing cancelled. No input files were deleted.");

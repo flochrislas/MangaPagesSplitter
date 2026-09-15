@@ -1,5 +1,6 @@
 package mangapagessplitter;
 
+import mangapagessplitter.archive.ExternalTools;
 import mangapagessplitter.archive.RarArchive;
 import mangapagessplitter.archive.ZipArchive;
 import mangapagessplitter.image.AutoCrop;
@@ -124,7 +125,7 @@ public class BatchProcessor {
                 try {
                     String outputName = resolveOutputName(job, o, root, reservedNames);
                     logMessage("Processing folder: " + outputName);
-                    Path out = processFolderAndCreateOutput(job, root, workspace, outputName, o, inputPaths);
+                    Path out = processFolderAndCreateOutput(job, root, workspace, outputName, o, inputPaths, result);
                     if (isCancelled()) {
                         result.cancelled = true;
                         break;
@@ -162,7 +163,7 @@ public class BatchProcessor {
             try {
                 deleteDirectory(workspace);
             } catch (IOException e) {
-                logMessage("Warning: failed to remove workspace " + workspace + ": " + e.getMessage());
+                warn(result, "failed to remove workspace " + workspace + ": " + e.getMessage());
             }
         }
     }
@@ -367,8 +368,8 @@ public class BatchProcessor {
      * case nothing in the root has been modified for this job.
      */
     private static Path processFolderAndCreateOutput(InputJob job, Path rootFolder, Path workspace,
-                                                     String outputName, BatchOptions o, Set<Path> inputPaths)
-            throws IOException {
+                                                     String outputName, BatchOptions o, Set<Path> inputPaths,
+                                                     BatchResult result) throws IOException {
         Path folder = job.folder;
         int splitMode = o.splitMode;
         boolean isJapaneseManga = o.isJapaneseManga;
@@ -539,30 +540,25 @@ public class BatchProcessor {
                         Path firstPage = tempDir.resolve(baseName + "_1." + ext);
                         Path secondPage = tempDir.resolve(baseName + "_2." + ext);
 
-                        if (!ImageIO.write(halves[0], ext, firstPage.toFile())) {
-                            logMessage("Warning: failed to write image: " + firstPage.getFileName());
-                        }
-                        if (!ImageIO.write(halves[1], ext, secondPage.toFile())) {
-                            logMessage("Warning: failed to write image: " + secondPage.getFileName());
-                        }
+                        writeImage(halves[0], ext, firstPage);
+                        writeImage(halves[1], ext, secondPage);
 
                         processedFiles.add(firstPage);
                         processedFiles.add(secondPage);
                     } else if (modified) {
                         String ext = imagePath.toString().substring(imagePath.toString().lastIndexOf('.') + 1);
                         Path tempFile = tempDir.resolve(imagePath.getFileName());
-                        if (!ImageIO.write(img, ext, tempFile.toFile())) {
-                            logMessage("Warning: failed to write image: " + tempFile.getFileName());
-                        }
+                        writeImage(img, ext, tempFile);
                         processedFiles.add(tempFile);
                     } else {
                         processedFiles.add(imagePath);
                     }
                 } else {
+                    warn(result, "Unsupported image format, page copied unchanged: " + imagePath.getFileName());
                     processedFiles.add(imagePath);
                 }
             } catch (IOException e) {
-                logMessage("Error processing image: " + imagePath + " - " + e.getMessage());
+                warn(result, "Page copied unchanged (" + e.getMessage() + "): " + imagePath.getFileName());
                 processedFiles.add(imagePath);
             }
         }
@@ -581,11 +577,18 @@ public class BatchProcessor {
             return finalPath;
         }
 
-        String extension = "." + o.outputFormat;
+        String format = o.outputFormat;
+        if ((format.equals("cbr") || format.equals("rar")) && ExternalTools.findRarCreator() == null) {
+            String fallback = format.equals("cbr") ? "cbz" : "zip";
+            warn(result, "No WinRAR / rar installed: writing " + fallback.toUpperCase()
+                    + " instead of " + format.toUpperCase() + " for " + outputName);
+            format = fallback;
+        }
+        String extension = "." + format;
         Path finalPath = rootFolder.resolve(outputName + extension);
         Path staged = workspace.resolve(outputName + extension + ".part");
-        logMessage("Creating " + o.outputFormat.toUpperCase() + " archive: " + finalPath.getFileName());
-        switch (o.outputFormat) {
+        logMessage("Creating " + format.toUpperCase() + " archive: " + finalPath.getFileName());
+        switch (format) {
             case "cbz":
             case "zip":
                 ZipArchive.create(processedFiles, staged.toFile());
@@ -599,7 +602,7 @@ public class BatchProcessor {
                 }
                 break;
             default:
-                throw new IOException("Unknown output format: " + o.outputFormat);
+                throw new IOException("Unknown output format: " + format);
         }
         publishFile(staged, finalPath, job, o.deleteOriginals);
         return finalPath;
@@ -611,6 +614,18 @@ public class BatchProcessor {
                 logMessage("Warning: failed to clean up temp directory: " + e.getMessage());
             }
         }
+    }
+
+    /** Writes the image, failing when no encoder exists for {@code format} (e.g. webp). */
+    private static void writeImage(BufferedImage img, String format, Path file) throws IOException {
+        if (!ImageIO.write(img, format, file.toFile())) {
+            throw new IOException("no encoder for ." + format);
+        }
+    }
+
+    private static void warn(BatchResult result, String message) {
+        logMessage("Warning: " + message);
+        result.warnings.add(message);
     }
 
     private static void verifyZip(Path zip, int expectedEntries) throws IOException {

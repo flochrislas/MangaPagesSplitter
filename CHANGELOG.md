@@ -40,6 +40,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the failed items.
 - RAR/CBR archives that neither junrar nor an external tool could extract are
   now reported as failures instead of being silently treated as empty.
+- When no WinRAR/rar is installed, CBR/RAR output is now written as CBZ/ZIP
+  **under the matching extension** and reported as a warning, instead of ZIP
+  bytes hidden behind a `.cbr`/`.rar` name that some readers refuse to open.
+- Pages that could not be decoded or re-encoded (for example WebP, which the
+  bundled runtime cannot write) are copied unchanged and listed as warnings in
+  the final summary instead of being silently passed through.
 - ZIP/CBZ extraction now validates directory entries as well as file entries,
   so a crafted archive can no longer create folders outside the extraction
   directory.

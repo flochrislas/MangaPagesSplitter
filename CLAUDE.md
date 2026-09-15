@@ -61,7 +61,7 @@ Tests are under `src/test/java` mirroring the package layout. `test_images/` hol
 - **Split detection (auto mode):** An image is split only if its width > height (landscape orientation).
 - **Reading direction:** Japanese (right-to-left) outputs right half first; Western (left-to-right) outputs left half first.
 - **Archive extraction:** Uses junrar library for RAR/CBR (up to RAR4). Falls back to external 7-Zip or WinRAR for RAR5. Uses `java.util.zip` for ZIP/CBZ.
-- **Output formats:** CBZ, CBR, ZIP, RAR, or plain folder. RAR/CBR output requires external WinRAR; falls back to ZIP if unavailable.
+- **Output formats:** CBZ, CBR, ZIP, RAR, or plain folder. RAR/CBR output requires an external WinRAR/rar; when none is installed the engine writes CBZ/ZIP under the matching extension and reports a warning.
 
 ## Dependencies
 

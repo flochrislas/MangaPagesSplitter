@@ -1,5 +1,6 @@
 package mangapagessplitter;
 
+import mangapagessplitter.archive.ExternalTools;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -23,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * File-safety tests for the batch engine. Every case runs against a throwaway
@@ -260,6 +262,39 @@ class BatchProcessorTest {
         assertEquals(2, r.outputs.size());
         assertTrue(Files.isDirectory(root.resolve("book")));
         assertTrue(Files.isDirectory(root.resolve("book (2)")));
+        assertNoLeftovers();
+    }
+
+    // ---- honest reporting -------------------------------------------------------
+
+    @Test
+    void cbrFallsBackToCbzUnderTruthfulNameWhenNoRarToolIsInstalled() throws IOException {
+        assumeTrue(ExternalTools.findRarCreator() == null, "a RAR tool is installed on this machine");
+        folderWithPages("book", 1);
+        BatchOptions o = options();
+        o.outputFormat = "cbr";
+
+        BatchResult r = BatchProcessor.run(o, new FakeListener());
+
+        assertTrue(r.isCleanSuccess(), r.summary());
+        assertEquals(1, r.warnings.size(), "format substitution is reported");
+        assertZipEntries(root.resolve("book.cbz"), "001.png");
+        assertFalse(Files.exists(root.resolve("book.cbr")), "no ZIP bytes under a .cbr name");
+        assertNoLeftovers();
+    }
+
+    @Test
+    void undecodablePageIsCopiedUnchangedAndReportedAsWarning() throws IOException {
+        Path book = folderWithPages("book", 1);
+        Files.write(book.resolve("002.png"), "this is not a png".getBytes(StandardCharsets.UTF_8));
+        BatchOptions o = options();
+        o.splitMode = 2;   // ask for a transformation so the page cannot silently pass through
+
+        BatchResult r = BatchProcessor.run(o, new FakeListener());
+
+        assertTrue(r.isCleanSuccess(), r.summary());
+        assertEquals(1, r.warnings.size(), r.warnings.toString());
+        assertZipEntries(root.resolve("book.cbz"), "001_1.png", "001_2.png", "002.png");
         assertNoLeftovers();
     }
 

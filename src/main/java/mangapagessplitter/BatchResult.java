@@ -17,6 +17,9 @@ public final class BatchResult {
     /** One human-readable line per job or archive that failed. */
     public final List<String> failures = new ArrayList<>();
 
+    /** Non-fatal problems: a page copied unchanged, a format substituted, a leftover not removed. */
+    public final List<String> warnings = new ArrayList<>();
+
     /** Jobs that produced nothing because their folder held no images. */
     public int skipped = 0;
 
@@ -31,10 +34,11 @@ public final class BatchResult {
         if (cancelled) {
             return "Processing cancelled. No input files were deleted.";
         }
+        String warn = warnings.isEmpty() ? "" : " " + warnings.size() + " warning(s).";
         if (failures.isEmpty()) {
-            return "Processing completed successfully: " + outputs.size() + " output(s) created.";
+            return "Processing completed successfully: " + outputs.size() + " output(s) created." + warn;
         }
         return "Processing finished with " + failures.size() + " error(s): "
-                + outputs.size() + " output(s) created. Inputs of failed items were kept.";
+                + outputs.size() + " output(s) created. Inputs of failed items were kept." + warn;
     }
 }

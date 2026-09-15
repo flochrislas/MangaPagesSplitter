@@ -11,7 +11,7 @@ import java.util.function.Consumer;
 
 /**
  * RAR / CBR support: Junrar for RAR4 and below, external tools for RAR5 and for
- * creating archives. Falls back to ZIP content when no RAR creator is installed.
+ * creating archives.
  */
 public final class RarArchive {
 
@@ -37,28 +37,18 @@ public final class RarArchive {
         }
     }
 
-    /** Creates a RAR with an external tool, or a ZIP under the requested name when none is available. */
+    /**
+     * Creates a RAR with WinRAR / rar. The caller must check {@link ExternalTools#findRarCreator()}
+     * first and pick another format when it returns null.
+     *
+     * @throws IOException when no RAR tool is installed or it did not produce the archive.
+     */
     public static void create(List<Path> imageFiles, File outputFile, Consumer<String> log) throws IOException {
-        System.out.println("Creating RAR/CBR: " + outputFile);
-
-        // Since Java doesn't have built-in RAR creation, try to use external tools
-        boolean success = ExternalTools.createRar(imageFiles, outputFile, log);
-        
-        if (!success) {
-            // Fallback - create ZIP instead but rename it to the requested extension
-            log.accept("WARNING: Could not create RAR/CBR file. No RAR program found. Creating ZIP instead.");
-            
-            // Create temporary zip file
-            File tempZip = new File(outputFile.getParentFile(), outputFile.getName() + ".zip.tmp");
-            ZipArchive.create(imageFiles, tempZip);
-            
-            // Rename to requested extension
-            if (tempZip.exists()) {
-                if (outputFile.exists()) {
-                    outputFile.delete();
-                }
-                tempZip.renameTo(outputFile);
-            }
+        if (ExternalTools.findRarCreator() == null) {
+            throw new IOException("no WinRAR / rar executable found to create " + outputFile.getName());
+        }
+        if (!ExternalTools.createRar(imageFiles, outputFile, log)) {
+            throw new IOException("the RAR tool failed to create " + outputFile.getName());
         }
     }
 }

@@ -77,19 +77,28 @@ public final class ExternalTools {
         return false;
     }
 
-    /** Tries WinRAR / rar at their usual install paths. Returns true on a zero exit code. */
+    private static final String[] RAR_CREATOR_PATHS = {
+        "C:\\Program Files\\WinRAR\\WinRAR.exe",
+        "C:\\Program Files (x86)\\WinRAR\\WinRAR.exe",
+        "/usr/bin/rar",
+        "/usr/local/bin/rar"
+    };
+
+    /** Path of an installed WinRAR / rar executable able to create archives, or null if none is found. */
+    public static String findRarCreator() {
+        for (String path : RAR_CREATOR_PATHS) {
+            if (new File(path).exists()) {
+                return path;
+            }
+        }
+        return null;
+    }
+
+    /** Creates a RAR with WinRAR / rar. Returns true on a zero exit code, false if no tool exists or it failed. */
     public static boolean createRar(List<Path> imageFiles, File outputFile, Consumer<String> log) {
-        // Try WinRAR paths
-        String[] winRarPaths = {
-            "C:\\Program Files\\WinRAR\\WinRAR.exe",
-            "C:\\Program Files (x86)\\WinRAR\\WinRAR.exe",
-            "/usr/bin/rar",
-            "/usr/local/bin/rar"
-        };
-        
-        for (String winRarPath : winRarPaths) {
-            File winRar = new File(winRarPath);
-            if (winRar.exists()) {
+        String winRarPath = findRarCreator();
+        if (winRarPath != null) {
+            {
                 try {
                     // Create a temporary file with list of files to add
                     File tempListFile = File.createTempFile("rarlist", ".txt");
