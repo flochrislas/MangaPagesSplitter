@@ -1,3 +1,5 @@
+package mangapagessplitter;
+
 import com.github.junrar.Junrar;
 import com.github.junrar.exception.RarException;
 
