@@ -1,11 +1,10 @@
 package mangapagessplitter;
 
-import com.github.junrar.Junrar;
-import com.github.junrar.exception.RarException;
-
 import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatLightLaf;
 
+import mangapagessplitter.archive.RarArchive;
+import mangapagessplitter.archive.ZipArchive;
 import mangapagessplitter.image.AutoCrop;
 import mangapagessplitter.image.AutoCropResult;
 import mangapagessplitter.image.PageTransform;
@@ -22,7 +21,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.zip.*;
 
 public class MangaPagesSplitter {
 
@@ -293,20 +291,10 @@ public class MangaPagesSplitter {
 
                 if (archivePath.toString().toLowerCase().endsWith(".rar") ||
                     archivePath.toString().toLowerCase().endsWith(".cbr")) {
-                    try {
-                        // Try Junrar first
-                        Junrar.extract(archivePath.toFile(), extractDir.toFile());
-                        logMessage("Extracted with Junrar: " + archivePath.getFileName());
-                    } catch (RarException e) {
-                        // If Junrar fails (likely due to RAR5 format), try external program
-                        logMessage("Junrar failed, might be RAR5 format: " + e.getMessage());
-                        if (!extractWithExternalProgram(archivePath, extractDir)) {
-                            logMessage("Both Junrar and external extraction failed for: " + archivePath);
-                        }
-                    }
+                    RarArchive.extract(archivePath, extractDir, MangaPagesSplitter::logMessage);
                 } else {
                     // Extract ZIP
-                    extractZip(archivePath.toFile(), extractDir.toFile());
+                    ZipArchive.extract(archivePath.toFile(), extractDir.toFile());
                     logMessage("Extracted: " + archivePath.getFileName());
                 }
                 extractedFolders.add(extractDir); // Track that this folder came from an archive
@@ -319,37 +307,6 @@ public class MangaPagesSplitter {
         return new ArchiveExtractionResult(archivePaths, extractedFolders);
     }
 
-    private static void extractZip(File zipFile, File destDir) throws IOException {
-        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(zipFile))) {
-            ZipEntry entry;
-            byte[] buffer = new byte[1024];
-
-            while ((entry = zis.getNextEntry()) != null) {
-                if (entry.isDirectory()) {
-                    File newDir = new File(destDir, entry.getName());
-                    Files.createDirectories(newDir.toPath());
-                    continue;
-                }
-
-                File outputFile = new File(destDir, entry.getName());
-
-                // Validate path to prevent Zip Slip vulnerability
-                if (!outputFile.getCanonicalPath().startsWith(destDir.getCanonicalPath() + File.separator)) {
-                    throw new IOException("Zip entry outside target dir: " + entry.getName());
-                }
-
-                // Create parent directories if they don't exist
-                Files.createDirectories(outputFile.getParentFile().toPath());
-
-                try (FileOutputStream fos = new FileOutputStream(outputFile)) {
-                    int len;
-                    while ((len = zis.read(buffer)) > 0) {
-                        fos.write(buffer, 0, len);
-                    }
-                }
-            }
-        }
-    }
 
     // Renamed method to reflect that it handles different output formats now
     // Updated method signature for processFolderAndCreateOutput
@@ -630,11 +587,11 @@ public class MangaPagesSplitter {
                 switch(outputFormat) {
                     case "cbz":
                     case "zip":
-                        createZipArchive(processedFiles, finalPath.toFile());
+                        ZipArchive.create(processedFiles, finalPath.toFile());
                         break;
                     case "cbr":
                     case "rar":
-                        createRarArchive(processedFiles, finalPath.toFile());
+                        RarArchive.create(processedFiles, finalPath.toFile(), MangaPagesSplitter::logMessage);
                         break;
                 }
             }
@@ -657,100 +614,8 @@ public class MangaPagesSplitter {
     
 
 
-    // Renamed to be more specific
-    private static void createZipArchive(List<Path> imageFiles, File outputFile) throws IOException {
-        System.out.println("Creating ZIP/CBZ: " + outputFile);
-
-        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(outputFile))) {
-            byte[] buffer = new byte[1024];
-
-            for (Path file : imageFiles) {
-                ZipEntry entry = new ZipEntry(file.getFileName().toString());
-                zos.putNextEntry(entry);
-
-                try (FileInputStream fis = new FileInputStream(file.toFile())) {
-                    int length;
-                    while ((length = fis.read(buffer)) > 0) {
-                        zos.write(buffer, 0, length);
-                    }
-                }
-                zos.closeEntry();
-            }
-        }
-    }
     
-    // New method for creating RAR archives
-    private static void createRarArchive(List<Path> imageFiles, File outputFile) throws IOException {
-        System.out.println("Creating RAR/CBR: " + outputFile);
-
-        // Since Java doesn't have built-in RAR creation, try to use external tools
-        boolean success = createRarWithExternalProgram(imageFiles, outputFile);
-        
-        if (!success) {
-            // Fallback - create ZIP instead but rename it to the requested extension
-            logMessage("WARNING: Could not create RAR/CBR file. No RAR program found. Creating ZIP instead.");
-            
-            // Create temporary zip file
-            File tempZip = new File(outputFile.getParentFile(), outputFile.getName() + ".zip.tmp");
-            createZipArchive(imageFiles, tempZip);
-            
-            // Rename to requested extension
-            if (tempZip.exists()) {
-                if (outputFile.exists()) {
-                    outputFile.delete();
-                }
-                tempZip.renameTo(outputFile);
-            }
-        }
-    }
     
-    // New method to create RAR files using external RAR tools
-    private static boolean createRarWithExternalProgram(List<Path> imageFiles, File outputFile) {
-        // Try WinRAR paths
-        String[] winRarPaths = {
-            "C:\\Program Files\\WinRAR\\WinRAR.exe",
-            "C:\\Program Files (x86)\\WinRAR\\WinRAR.exe",
-            "/usr/bin/rar",
-            "/usr/local/bin/rar"
-        };
-        
-        for (String winRarPath : winRarPaths) {
-            File winRar = new File(winRarPath);
-            if (winRar.exists()) {
-                try {
-                    // Create a temporary file with list of files to add
-                    File tempListFile = File.createTempFile("rarlist", ".txt");
-                    try (PrintWriter writer = new PrintWriter(tempListFile)) {
-                        for (Path file : imageFiles) {
-                            writer.println(file.toAbsolutePath());
-                        }
-                    }
-                    
-                    // Build command for WinRAR
-                    // WinRAR a -ep output.rar @filelist.txt
-                    ProcessBuilder pb = new ProcessBuilder(
-                        winRarPath, "a", "-ep", outputFile.getAbsolutePath(), "@" + tempListFile.getAbsolutePath()
-                    );
-
-                    int exitCode = runProcess(pb);
-                    
-                    // Clean up temp file
-                    tempListFile.delete();
-                    
-                    if (exitCode == 0) {
-                        logMessage("Successfully created RAR file with " + new File(winRarPath).getName());
-                        return true;
-                    } else {
-                        logMessage("Failed to create RAR file - exit code: " + exitCode);
-                    }
-                } catch (Exception e) {
-                    logMessage("Error creating RAR file: " + e.getMessage());
-                }
-            }
-        }
-        
-        return false;
-    }
 
     private static void deleteDirectory(Path directory) throws IOException {
         try (Stream<Path> walk = Files.walk(directory)) {
@@ -792,73 +657,5 @@ public class MangaPagesSplitter {
         return false;
     }
 
-    private static int runProcess(ProcessBuilder pb) throws IOException, InterruptedException {
-        pb.redirectErrorStream(true);
-        Process process = pb.start();
-        try (InputStream is = process.getInputStream()) {
-            byte[] buf = new byte[1024];
-            while (is.read(buf) != -1) {}
-        }
-        return process.waitFor();
-    }
 
-    private static boolean extractWithExternalProgram(Path archivePath, Path extractDir) {
-        System.out.println("Attempting external extraction for: " + archivePath);
-
-        // Try 7-Zip first (most common)
-        String[] sevenZipPaths = {
-            "C:\\Program Files\\7-Zip\\7z.exe",
-            "C:\\Program Files (x86)\\7-Zip\\7z.exe",
-            "/usr/bin/7z",
-            "/usr/local/bin/7z"
-        };
-
-        // Try WinRAR paths
-        String[] winRarPaths = {
-            "C:\\Program Files\\WinRAR\\WinRAR.exe",
-            "C:\\Program Files (x86)\\WinRAR\\WinRAR.exe"
-        };
-
-        // Try 7-Zip
-        for (String path : sevenZipPaths) {
-            File sevenZip = new File(path);
-            if (sevenZip.exists()) {
-                try {
-                    ProcessBuilder pb = new ProcessBuilder(
-                        path, "x", "-y",
-                        archivePath.toString(),
-                        "-o" + extractDir.toString()
-                    );
-                    int exitCode = runProcess(pb);
-                    if (exitCode == 0) {
-                        System.out.println("Successfully extracted with 7-Zip");
-                        return true;
-                    }
-                } catch (Exception e) {
-                    System.err.println("7-Zip extraction failed: " + e.getMessage());
-                }
-            }
-        }
-
-        // Try WinRAR
-        for (String path : winRarPaths) {
-            File winRar = new File(path);
-            if (winRar.exists()) {
-                try {
-                    ProcessBuilder pb = new ProcessBuilder(
-                        path, "x", archivePath.toString(), extractDir.toString()
-                    );
-                    int exitCode = runProcess(pb);
-                    if (exitCode == 0) {
-                        System.out.println("Successfully extracted with WinRAR");
-                        return true;
-                    }
-                } catch (Exception e) {
-                    System.err.println("WinRAR extraction failed: " + e.getMessage());
-                }
-            }
-        }
-
-        return false;
-    }
 }
