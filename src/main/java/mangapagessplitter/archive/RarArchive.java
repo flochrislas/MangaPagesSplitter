@@ -20,6 +20,8 @@ public final class RarArchive {
     /**
      * Extracts {@code archivePath} into {@code extractDir}: Junrar first, then
      * 7-Zip / WinRAR if Junrar rejects the archive (typically RAR5).
+     *
+     * @throws IOException when neither method could extract the archive.
      */
     public static void extract(Path archivePath, Path extractDir, Consumer<String> log) throws IOException {
         try {
@@ -30,7 +32,7 @@ public final class RarArchive {
             // If Junrar fails (likely due to RAR5 format), try external program
             log.accept("Junrar failed, might be RAR5 format: " + e.getMessage());
             if (!ExternalTools.extractRar(archivePath, extractDir)) {
-                log.accept("Both Junrar and external extraction failed for: " + archivePath);
+                throw new IOException("Junrar and external extraction both failed: " + e.getMessage(), e);
             }
         }
     }

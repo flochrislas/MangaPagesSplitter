@@ -25,6 +25,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   margin) are recognised and skipped, so they no longer block the
   margin crawler and leave a wide white border untrimmed on that side.
 
+### Fixed
+- **Input files can no longer be lost by a failed or cancelled run.** Archives
+  are extracted into a hidden per-run workspace instead of next to your folders,
+  so an existing folder with the same name is never overwritten or deleted.
+  Outputs are written to a staging file, verified, then moved into place; an
+  existing file at the destination is renamed to a unique `_original` backup
+  rather than replaced. A source folder or archive is deleted only after every
+  output derived from it has been published, and never when the run was
+  cancelled or that item failed. Output names are validated (no `..`, no path
+  separators, must stay inside the selected folder) and colliding names get a
+  `(2)` suffix instead of overwriting each other. The final log line now says
+  whether the run completed, was cancelled, or finished with errors, and lists
+  the failed items.
+- RAR/CBR archives that neither junrar nor an external tool could extract are
+  now reported as failures instead of being silently treated as empty.
+
 ### Changed
 - Smart autocrop and manual four-side cropping are now **mutually
   exclusive**. Enabling smart autocrop disables the manual L/R/T/B

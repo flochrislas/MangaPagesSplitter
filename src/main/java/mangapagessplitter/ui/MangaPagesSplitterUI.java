@@ -3,7 +3,9 @@ package mangapagessplitter.ui;
 import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatLaf;
 import com.formdev.flatlaf.FlatLightLaf;
+import mangapagessplitter.BatchOptions;
 import mangapagessplitter.BatchProcessor;
+import mangapagessplitter.BatchResult;
 import mangapagessplitter.ProcessingListener;
 
 import javax.swing.*;
@@ -15,6 +17,7 @@ import java.awt.event.*;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.prefs.Preferences;
 
@@ -52,7 +55,7 @@ public class MangaPagesSplitterUI extends JFrame implements ProcessingListener {
     private JButton startButton;
     private JButton cancelButton;
     
-    private SwingWorker<Void, String> currentWorker = null;
+    private SwingWorker<BatchResult, String> currentWorker = null;
     private JCheckBoxMenuItem darkThemeMenuItem;
 
     // Configuration values
@@ -1092,79 +1095,89 @@ public class MangaPagesSplitterUI extends JFrame implements ProcessingListener {
         appendToLog("Starting manga processing...");
         appendToLog("Root folder: " + rootFolder);
         
+        BatchOptions options = new BatchOptions();
+        options.rootFolder = rootFolder;
+        options.splitMode = splitMode;
+        options.isJapaneseManga = isJapaneseManga;
+        options.deleteOriginals = deleteOriginals;
+        options.skipImagesFromStart = skipImagesFromStart;
+        options.skipImagesFromEnd = skipImagesFromEnd;
+        options.rotateWideImages = rotateWideImages;
+        options.outputFormat = outputFormat;
+        options.cropLeft = effectiveCropLeft;
+        options.cropRight = effectiveCropRight;
+        options.cropTop = effectiveCropTop;
+        options.cropBottom = effectiveCropBottom;
+        options.smartAutoCrop = smartAutoCrop;
+        options.smartAutoCropSensitivity = smartAutoCropSensitivity;
+        options.flattenDirectories = flattenDirectories;
+        options.useCustomTitle = useCustomTitle;
+        options.customTitle = customTitleField.getText().trim();
+
         // Create and start worker thread for background processing
-        currentWorker = new SwingWorker<Void, String>() {
+        currentWorker = new SwingWorker<BatchResult, String>() {
             @Override
-            protected Void doInBackground() {
-                try {
-                    publish("Split mode: " + getSplitModeName(splitMode));
-                    if (splitMode == 0 || splitMode == 2) {
-                        publish("Reading direction: " + (isJapaneseManga ? "Japanese (right to left)" : "Western (left to right)"));
-                    }
-                    
-                    if (skipImagesCheckbox.isSelected() && (skipImagesFromStart > 0 || skipImagesFromEnd > 0)) {
-                        publish("Skipping " + skipImagesFromStart + " images from start and " + 
-                                skipImagesFromEnd + " images from end of each manga");
-                    }
-                    
-                    // Add logging for crop values if any
-                    if (smartAutoCrop) {
-                        publish("Smart autocrop: enabled (sensitivity=" + smartAutoCropSensitivity + ")");
-                    } else if (effectiveCropLeft > 0 || effectiveCropRight > 0
-                            || effectiveCropTop > 0 || effectiveCropBottom > 0) {
-                        publish("Cropping: Left=" + effectiveCropLeft + "px, Right=" + effectiveCropRight +
-                               "px, Top=" + effectiveCropTop + "px, Bottom=" + effectiveCropBottom + "px");
-                    }
-                    
-                    if (rotateWideImages && splitMode != 2) {
-                        publish("Wide images will be rotated 90° clockwise");
-                    }
-                    
-                    publish("Output format: " + outputFormat);
-                    publish("File handling: " + (deleteOriginals ? "Delete originals" : "Keep originals"));
-                    publish("------------------------------");
-                    
-                    // Call MangaPagesSplitter to do the actual processing
-                    // Pass the UI instance, output format, and crop values
-                    BatchProcessor.processWithUI(
-                        rootFolder, splitMode, isJapaneseManga, deleteOriginals,
-                        skipImagesFromStart, skipImagesFromEnd, rotateWideImages,
-                        outputFormat, effectiveCropLeft, effectiveCropRight, effectiveCropTop, effectiveCropBottom,
-                        smartAutoCrop, smartAutoCropSensitivity,
-                        flattenDirectories, useCustomTitle, customTitleField.getText().trim(),
-                        MangaPagesSplitterUI.this);
-                    
-                } catch (Exception e) {
-                    publish("ERROR: " + e.getMessage());
-                    e.printStackTrace();
+            protected BatchResult doInBackground() throws Exception {
+                publish("Split mode: " + getSplitModeName(splitMode));
+                if (splitMode == 0 || splitMode == 2) {
+                    publish("Reading direction: " + (isJapaneseManga ? "Japanese (right to left)" : "Western (left to right)"));
                 }
-                return null;
+
+                if (skipImagesCheckbox.isSelected() && (skipImagesFromStart > 0 || skipImagesFromEnd > 0)) {
+                    publish("Skipping " + skipImagesFromStart + " images from start and " +
+                            skipImagesFromEnd + " images from end of each manga");
+                }
+
+                // Add logging for crop values if any
+                if (smartAutoCrop) {
+                    publish("Smart autocrop: enabled (sensitivity=" + smartAutoCropSensitivity + ")");
+                } else if (effectiveCropLeft > 0 || effectiveCropRight > 0
+                        || effectiveCropTop > 0 || effectiveCropBottom > 0) {
+                    publish("Cropping: Left=" + effectiveCropLeft + "px, Right=" + effectiveCropRight +
+                           "px, Top=" + effectiveCropTop + "px, Bottom=" + effectiveCropBottom + "px");
+                }
+
+                if (rotateWideImages && splitMode != 2) {
+                    publish("Wide images will be rotated 90° clockwise");
+                }
+
+                publish("Output format: " + outputFormat);
+                publish("File handling: " + (deleteOriginals ? "Delete originals" : "Keep originals"));
+                publish("------------------------------");
+
+                return BatchProcessor.run(options, MangaPagesSplitterUI.this);
             }
-            
+
             @Override
             protected void process(java.util.List<String> chunks) {
                 for (String message : chunks) {
                     appendToLog(message);
                 }
             }
-            
+
             @Override
             protected void done() {
                 try {
-                    get(); // Will throw any exceptions from doInBackground
+                    BatchResult result = get();
                     appendToLog("------------------------------");
-                    appendToLog("Processing completed successfully!");
+                    appendToLog(result.summary());
+                    for (String failure : result.failures) {
+                        appendToLog("  - " + failure);
+                    }
+                } catch (CancellationException e) {
+                    appendToLog("Processing cancelled. No input files were deleted.");
                 } catch (InterruptedException e) {
                     appendToLog("Processing was interrupted!");
                 } catch (ExecutionException e) {
-                    appendToLog("Error during processing: " + e.getCause().getMessage());
+                    appendToLog("------------------------------");
+                    appendToLog("Processing FAILED: " + e.getCause().getMessage());
                     e.getCause().printStackTrace();
                 } finally {
                     resetUIAfterProcessing();
                 }
             }
         };
-        
+
         currentWorker.execute();
     }
     
@@ -1257,9 +1270,13 @@ public class MangaPagesSplitterUI extends JFrame implements ProcessingListener {
     
     @Override
     public void log(String message) {
-        if (currentWorker != null && !currentWorker.isCancelled()) {
-            SwingUtilities.invokeLater(() -> appendToLog(message));
-        }
+        // Called from the processing thread: decide on the event-dispatch thread whether
+        // the message still belongs to a live run, so a cancelled run cannot log late.
+        SwingUtilities.invokeLater(() -> {
+            if (currentWorker != null && !currentWorker.isCancelled()) {
+                appendToLog(message);
+            }
+        });
     }
     
     private void appendToLog(String message) {

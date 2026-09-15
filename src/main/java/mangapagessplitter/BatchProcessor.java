@@ -8,298 +8,376 @@ import mangapagessplitter.image.PageTransform;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
-import java.io.*;
-import java.nio.file.*;
+import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.util.zip.ZipFile;
 
+/**
+ * Batch engine: discovers the volumes under a root folder, extracts archives into
+ * an application-owned workspace, processes every image, publishes the outputs and
+ * finally deletes the inputs the user asked to delete.
+ *
+ * <p>File-safety invariant: <b>an input is deleted only after every output derived
+ * from it has been written, verified and moved into place, and never when the run
+ * was cancelled.</b> Outputs are staged inside the workspace and moved into the
+ * root in one step; an existing destination is renamed to a backup rather than
+ * deleted, unless it is the job's own source and the user chose to delete originals.
+ */
 public class BatchProcessor {
 
     private static final String[] IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"};
     private static final String[] ARCHIVE_EXTENSIONS = {".rar", ".zip", ".cbr", ".cbz"};
-    
+
+    /** Prefix of the per-run workspace directory created inside the root. */
+    static final String WORKSPACE_PREFIX = ".mangapagessplitter-work-";
+
     private static ProcessingListener ui = null;
 
-    private static class ArchiveExtractionResult {
-        public final List<Path> archivePaths;
-        public final List<Path> extractedFolders;
-        
-        public ArchiveExtractionResult(List<Path> archivePaths, List<Path> extractedFolders) {
-            this.archivePaths = archivePaths;
-            this.extractedFolders = extractedFolders;
+    /** An archive found in the root and where (if at all) it was extracted. */
+    private static final class ExtractedArchive {
+        final Path archive;
+        final Path dir;
+        boolean ok;
+
+        ExtractedArchive(Path archive, Path dir) {
+            this.archive = archive;
+            this.dir = dir;
         }
     }
 
+    /** One folder of images to turn into one output. */
+    private static final class InputJob {
+        final Path folder;
+        /** Name shown to the user and used for the output; "Parent - Leaf" in flatten mode. */
+        final String displayName;
+        /** Last path segment of the source, used for the custom-title number. */
+        final String leafName;
+        /** The original archive this folder was extracted from, or null for a user folder. */
+        final Path archive;
+        /** For user folders: the direct child of the root that contains this folder. */
+        final Path topLevel;
 
-    
+        InputJob(Path folder, String displayName, String leafName, Path archive, Path topLevel) {
+            this.folder = folder;
+            this.displayName = displayName;
+            this.leafName = leafName;
+            this.archive = archive;
+            this.topLevel = topLevel;
+        }
+    }
+
     /**
-     * Runs the whole batch: extract archives under {@code rootFolder}, process every
-     * folder, create the outputs and clean up. Progress, log lines and cancellation
-     * go through {@code listener}.
+     * Runs the whole batch. Progress, log lines and cancellation go through
+     * {@code listener}. Never throws for a single failed volume: those are reported
+     * in the result and their inputs are left alone.
      */
-    public static void processWithUI(
-            String rootFolder, int splitMode, boolean isJapaneseManga, boolean deleteOriginals,
-            int skipImagesFromStart, int skipImagesFromEnd, boolean rotateWideImages, 
-            String outputFormat, int cropLeft, int cropRight, int cropTop, int cropBottom,
-            boolean smartAutoCrop, int smartAutoCropSensitivity,
-            boolean flattenDirectories, boolean useCustomTitle, String customTitle,
-            ProcessingListener listener) throws IOException {
-
+    public static BatchResult run(BatchOptions o, ProcessingListener listener) throws IOException {
         ui = listener;
-        
+        BatchResult result = new BatchResult();
+
+        Path root = Paths.get(o.rootFolder).toAbsolutePath().normalize();
+        if (!Files.isDirectory(root)) {
+            throw new IOException("Root folder does not exist: " + root);
+        }
+
+        Path workspace = Files.createTempDirectory(root, WORKSPACE_PREFIX);
         try {
             logMessage("Starting extraction of archives...");
-            // Step 1: Extract all archives and collect paths
-            ArchiveExtractionResult extractionResult = extractAllArchives(rootFolder);
-            List<Path> originalArchives = extractionResult.archivePaths;
-            List<Path> extractedFolders = extractionResult.extractedFolders;
-            
-            logMessage("Extracted " + originalArchives.size() + " archives.");
-            
-            // Step 2: Collect folders to process
-            Path root = Paths.get(rootFolder);
-            List<Path> folders;
-            if (flattenDirectories) {
-                // Find every directory (at any depth) that directly contains image files
-                try (Stream<Path> walk = Files.walk(root)) {
-                    folders = walk
-                        .filter(Files::isDirectory)
-                        .filter(dir -> !dir.equals(root))
-                        .filter(dir -> {
-                            try (Stream<Path> children = Files.list(dir)) {
-                                return children.anyMatch(p -> Files.isRegularFile(p) && isImageFile(p.toString()));
-                            } catch (IOException e) {
-                                return false;
-                            }
-                        })
-                        .sorted()
-                        .collect(Collectors.toList());
-                }
-            } else {
-                try (Stream<Path> stream = Files.list(root)) {
-                    folders = stream.filter(Files::isDirectory).sorted().collect(Collectors.toList());
-                }
+            List<ExtractedArchive> archives = extractAllArchives(root, workspace, result);
+            if (isCancelled()) {
+                result.cancelled = true;
+                logMessage("Processing cancelled by user.");
+                return result;
             }
 
-            final long totalFolders = folders.size();
-            List<Path> newlyCreatedOutputFiles = new ArrayList<>();
-            final int[] processedFolders = {0};
+            List<InputJob> jobs = discoverJobs(root, workspace, archives, o.flattenDirectories);
+            logMessage("Processing " + jobs.size() + " folder" + (jobs.size() == 1 ? "" : "s") + "...");
 
-            logMessage("Processing " + totalFolders + " folders...");
-
-            // Keep track of folders to delete after processing
-            List<Path> foldersToDelete = new ArrayList<>();
-
-            for (Path folder : folders) {
-                // Check if the processing should be cancelled
-                if (Thread.currentThread().isInterrupted() || (ui != null && ui.isCancelled())) {
-                    logMessage("Processing cancelled by user.");
+            Set<Path> inputPaths = inputPaths(jobs, archives);
+            Set<String> reservedNames = new HashSet<>();
+            Map<InputJob, Path> published = new LinkedHashMap<>();
+            List<InputJob> failed = new ArrayList<>();
+            int index = 0;
+            for (InputJob job : jobs) {
+                if (isCancelled()) {
+                    result.cancelled = true;
                     break;
                 }
-
+                updateProgress("Processing folder " + (index + 1) + "/" + jobs.size(),
+                               (int) ((index * 100L) / jobs.size()));
+                index++;
                 try {
-                    // In flatten mode use "ParentName - LeafName" as the output name
-                    String outputName;
-                    if (flattenDirectories) {
-                        Path relativePath = root.relativize(folder);
-                        StringBuilder nameBuilder = new StringBuilder();
-                        for (int i = 0; i < relativePath.getNameCount(); i++) {
-                            if (i > 0) nameBuilder.append(" - ");
-                            nameBuilder.append(relativePath.getName(i).toString());
-                        }
-                        outputName = nameBuilder.toString();
-                    } else {
-                        outputName = folder.getFileName().toString();
-                    }
-
-                    // Apply custom title if enabled: replace outputName with "<title> <number>"
-                    if (useCustomTitle && customTitle != null && !customTitle.isEmpty()) {
-                        String number = extractLastNumber(folder.getFileName().toString());
-                        outputName = customTitle + (number.isEmpty() ? "" : " " + number);
-                    }
-
+                    String outputName = resolveOutputName(job, o, root, reservedNames);
                     logMessage("Processing folder: " + outputName);
-
-                    // Update progress
-                    if (totalFolders > 0) {
-                        updateProgress("Processing folder " + (processedFolders[0] + 1) + "/" + totalFolders,
-                                      (int)((processedFolders[0] * 100) / totalFolders));
+                    Path out = processFolderAndCreateOutput(job, root, workspace, outputName, o, inputPaths);
+                    if (isCancelled()) {
+                        result.cancelled = true;
+                        break;
                     }
-
-                    // Pass crop parameters to processFolderAndCreateOutput
-                    Path newOutputPath = processFolderAndCreateOutput(folder, root, outputName, splitMode,
-                                                          isJapaneseManga, deleteOriginals,
-                                                          skipImagesFromStart, skipImagesFromEnd,
-                                                          rotateWideImages, outputFormat,
-                                                          cropLeft, cropRight, cropTop, cropBottom,
-                                                          smartAutoCrop, smartAutoCropSensitivity,
-                                                          extractedFolders);
-                    if (newOutputPath != null) {
-                        newlyCreatedOutputFiles.add(newOutputPath);
-                        logMessage("Created: " + newOutputPath.getFileName());
-
-                        // Add folder to cleanup list if output is not "folder"
-                        // Only clean up extracted archive folders (intermediate) or if user wants originals deleted
-                        if (!outputFormat.equals("folder")) {
-                            if (flattenDirectories) {
-                                // Clean up the top-level ancestor (direct child of root), not the leaf itself
-                                Path topLevelAncestor = root.resolve(root.relativize(folder).getName(0));
-                                if ((extractedFolders.contains(topLevelAncestor) || deleteOriginals)
-                                        && !foldersToDelete.contains(topLevelAncestor)) {
-                                    foldersToDelete.add(topLevelAncestor);
-                                }
-                            } else {
-                                if (extractedFolders.contains(folder) || deleteOriginals) {
-                                    foldersToDelete.add(folder);
-                                }
-                            }
-                        }
+                    if (out != null) {
+                        published.put(job, out);
+                        result.outputs.add(out);
+                        logMessage("Created: " + out.getFileName());
+                    } else {
+                        // Nothing produced: give the name back so a later job can use it.
+                        reservedNames.remove(outputName.toLowerCase(Locale.ROOT));
+                        result.skipped++;
                     }
-
-                    processedFolders[0]++;
-
                 } catch (IOException e) {
-                    logMessage("Error processing folder: " + folder + " - " + e.getMessage());
+                    failed.add(job);
+                    String msg = "Error processing folder " + job.displayName + ": " + e.getMessage();
+                    logMessage(msg);
+                    result.failures.add(msg);
                 }
             }
-            
+
+            if (result.cancelled) {
+                logMessage("Processing cancelled by user. No input files were deleted.");
+                return result;
+            }
+
             updateProgress("Cleaning up...", 90);
-                    
-            // Delete original archives if needed, but exclude newly created archive files
-            if (deleteOriginals) {
-                logMessage("Deleting original archives...");
-                
-                // Make a copy of the original archives list and remove any newly created output files
-                List<Path> archivesToDelete = new ArrayList<>(originalArchives);
-                archivesToDelete.removeAll(newlyCreatedOutputFiles);
-                
-                for (Path archive : archivesToDelete) {
-                    try {
-                        Files.delete(archive);
-                        logMessage("Deleted original archive: " + archive.getFileName());
-                    } catch (IOException e) {
-                        logMessage("Error deleting archive: " + archive + " - " + e.getMessage());
-                    }
-                }
-            }
-            
-            // Clean up intermediate folders
-            logMessage("Cleaning up intermediate folders used to create archives...");
-            for (Path folder : foldersToDelete) {
-                try {
-                    deleteDirectory(folder);
-                } catch (IOException e) {
-                    logMessage("Error cleaning up intermediate folder: " + folder + " - " + e.getMessage());
-                }
-            }            
+            cleanUp(o, root, archives, jobs, published, failed, result);
 
             updateProgress("Complete", 100);
-            String outputType = outputFormat.equals("folder") ? "folders" : outputFormat.toUpperCase() + " files";
-            logMessage("Created " + newlyCreatedOutputFiles.size() + " " + outputType);
-            
-        } catch (IOException e) {
-            logMessage("Error during processing: " + e.getMessage());
-            e.printStackTrace();
-            throw e;
-        }
-    }
-
-    private static void logMessage(String message) {
-        System.out.println(message);
-        if (ui != null) {
-            ui.log(message);
-        }
-    }
-    
-    private static void updateProgress(String status, int percentage) {
-        if (ui != null) {
-            ui.progress(status, percentage);
-        }
-    }
-
-    private static ArchiveExtractionResult extractAllArchives(String rootFolder) throws IOException {
-        logMessage("Extracting archives in: " + rootFolder);
-        List<Path> archivePaths = new ArrayList<>();
-        List<Path> extractedFolders = new ArrayList<>();
-
-        // Count total archives
-        long archiveCount;
-        try (Stream<Path> archiveCountStream = Files.list(Paths.get(rootFolder))) {
-            archiveCount = archiveCountStream
-                            .filter(Files::isRegularFile)
-                            .filter(path -> isArchiveFile(path.toString()))
-                            .count();
-        } catch (IOException e) {
-            archiveCount = 0;
-            logMessage("Error counting archives: " + e.getMessage());
-        }
-
-        final long totalArchives = archiveCount;
-        final int[] processedArchives = {0};
-        
-        if (totalArchives > 0) {
-            logMessage("Found " + totalArchives + " archives to extract");
-        }
-
-        List<Path> archives;
-        try (Stream<Path> archiveListStream = Files.list(Paths.get(rootFolder))) {
-            archives = archiveListStream
-                .filter(Files::isRegularFile)
-                .filter(path -> isArchiveFile(path.toString()))
-                .collect(Collectors.toList());
-        }
-
-        for (Path archivePath : archives) {
-            // Check if processing was cancelled
-            if (Thread.currentThread().isInterrupted() || (ui != null && ui.isCancelled())) {
-                return new ArchiveExtractionResult(archivePaths, extractedFolders);
+            String outputType = o.outputFormat.equals("folder") ? "folders" : o.outputFormat.toUpperCase() + " files";
+            logMessage("Created " + result.outputs.size() + " " + outputType);
+            return result;
+        } finally {
+            try {
+                deleteDirectory(workspace);
+            } catch (IOException e) {
+                logMessage("Warning: failed to remove workspace " + workspace + ": " + e.getMessage());
             }
-            
-            archivePaths.add(archivePath); // Store the path for deletion later
-            String baseName = archivePath.getFileName().toString();
-            baseName = baseName.substring(0, baseName.lastIndexOf('.'));
-            Path extractDir = Paths.get(rootFolder, baseName);
+        }
+    }
+
+    // ------------------------------------------------------------------ discovery
+
+    private static List<ExtractedArchive> extractAllArchives(Path root, Path workspace, BatchResult result)
+            throws IOException {
+        List<ExtractedArchive> out = new ArrayList<>();
+        List<Path> archives;
+        try (Stream<Path> s = Files.list(root)) {
+            archives = s.filter(Files::isRegularFile)
+                        .filter(p -> isArchiveFile(p.toString()))
+                        .sorted()
+                        .collect(Collectors.toList());
+        }
+        if (!archives.isEmpty()) {
+            logMessage("Found " + archives.size() + " archives to extract");
+        }
+
+        int done = 0;
+        for (Path archivePath : archives) {
+            if (isCancelled()) {
+                break;
+            }
+            updateProgress("Extracting archive " + (done + 1) + "/" + archives.size(),
+                           (int) ((done * 100L) / archives.size()));
+
+            String fileName = archivePath.getFileName().toString();
+            String baseName = fileName.substring(0, fileName.lastIndexOf('.'));
+            Path extractDir = uniqueChild(workspace, sanitizeName(baseName));
+            ExtractedArchive ea = new ExtractedArchive(archivePath, extractDir);
+            out.add(ea);
             try {
                 Files.createDirectories(extractDir);
-
-                // Update progress
-                if (totalArchives > 0) {
-                    int percentage = (int)((processedArchives[0] * 100) / totalArchives);
-                    updateProgress("Extracting archive " + (processedArchives[0] + 1) + "/" + totalArchives, percentage);
-                }
-
-                if (archivePath.toString().toLowerCase().endsWith(".rar") ||
-                    archivePath.toString().toLowerCase().endsWith(".cbr")) {
+                String lower = fileName.toLowerCase(Locale.ROOT);
+                if (lower.endsWith(".rar") || lower.endsWith(".cbr")) {
                     RarArchive.extract(archivePath, extractDir, BatchProcessor::logMessage);
                 } else {
-                    // Extract ZIP
                     ZipArchive.extract(archivePath.toFile(), extractDir.toFile());
-                    logMessage("Extracted: " + archivePath.getFileName());
+                    logMessage("Extracted: " + fileName);
                 }
-                extractedFolders.add(extractDir); // Track that this folder came from an archive
-                processedArchives[0]++;
+                ea.ok = true;
             } catch (IOException e) {
-                logMessage("Error extracting archive: " + archivePath + " - " + e.getMessage());
+                String msg = "Error extracting archive " + fileName + ": " + e.getMessage();
+                logMessage(msg);
+                result.failures.add(msg);
+            }
+            done++;
+        }
+        logMessage("Extracted " + out.stream().filter(a -> a.ok).count() + " archives.");
+        return out;
+    }
+
+    private static List<InputJob> discoverJobs(Path root, Path workspace, List<ExtractedArchive> archives,
+                                               boolean flatten) throws IOException {
+        List<InputJob> jobs = new ArrayList<>();
+
+        // User folders directly under the root (never the workspace, nor stale ones).
+        List<Path> topLevel;
+        try (Stream<Path> s = Files.list(root)) {
+            topLevel = s.filter(Files::isDirectory)
+                        .filter(p -> !isWorkspaceDir(p))
+                        .sorted()
+                        .collect(Collectors.toList());
+        }
+        for (Path dir : topLevel) {
+            if (flatten) {
+                for (Path leaf : imageFolders(dir)) {
+                    jobs.add(new InputJob(leaf, joinedName(root.relativize(leaf)),
+                            leaf.getFileName().toString(), null, dir));
+                }
+            } else {
+                jobs.add(new InputJob(dir, dir.getFileName().toString(),
+                        dir.getFileName().toString(), null, dir));
             }
         }
 
-        return new ArchiveExtractionResult(archivePaths, extractedFolders);
+        // Folders extracted from archives. Named after the archive, not the workspace dir.
+        for (ExtractedArchive ea : archives) {
+            if (!ea.ok) continue;
+            String archiveName = ea.archive.getFileName().toString();
+            String baseName = archiveName.substring(0, archiveName.lastIndexOf('.'));
+            if (flatten) {
+                for (Path leaf : imageFolders(ea.dir)) {
+                    Path rel = ea.dir.relativize(leaf);
+                    String name = rel.getNameCount() == 0 || rel.toString().isEmpty()
+                            ? baseName : baseName + " - " + joinedName(rel);
+                    String leafName = leaf.equals(ea.dir) ? baseName : leaf.getFileName().toString();
+                    jobs.add(new InputJob(leaf, name, leafName, ea.archive, null));
+                }
+            } else {
+                jobs.add(new InputJob(ea.dir, baseName, baseName, ea.archive, null));
+            }
+        }
+
+        jobs.sort((x, y) -> x.displayName.compareTo(y.displayName));
+        return jobs;
     }
 
+    /** Every directory at or below {@code start} that directly contains at least one image. */
+    private static List<Path> imageFolders(Path start) throws IOException {
+        try (Stream<Path> walk = Files.walk(start)) {
+            return walk.filter(Files::isDirectory)
+                       .filter(BatchProcessor::hasDirectImages)
+                       .sorted()
+                       .collect(Collectors.toList());
+        }
+    }
 
-    // Renamed method to reflect that it handles different output formats now
-    // Updated method signature for processFolderAndCreateOutput
-    private static Path processFolderAndCreateOutput(Path folder, Path rootFolder, String outputName, int splitMode, boolean isJapaneseManga,
-                                                boolean deleteOriginals, int skipImagesFromStart, int skipImagesFromEnd,
-                                                boolean rotateWideImages, String outputFormat,
-                                                int cropLeft, int cropRight, int cropTop, int cropBottom,
-                                                boolean smartAutoCrop, int smartAutoCropSensitivity,
-                                                List<Path> extractedFolders) throws IOException {
-        logMessage("Processing folder: " + folder);
+    private static boolean hasDirectImages(Path dir) {
+        try (Stream<Path> children = Files.list(dir)) {
+            return children.anyMatch(p -> Files.isRegularFile(p) && isImageFile(p.toString()));
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private static String joinedName(Path relative) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < relative.getNameCount(); i++) {
+            if (i > 0) sb.append(" - ");
+            sb.append(relative.getName(i));
+        }
+        return sb.toString();
+    }
+
+    private static boolean isWorkspaceDir(Path p) {
+        return p.getFileName() != null && p.getFileName().toString().startsWith(WORKSPACE_PREFIX);
+    }
+
+    // ------------------------------------------------------------------ naming
+
+    /**
+     * Decides the output name for a job: the display name, or the custom title plus
+     * the last number of the source name. The result is sanitised, must resolve to a
+     * direct child of the root, and is made unique within this run.
+     */
+    private static String resolveOutputName(InputJob job, BatchOptions o, Path root, Set<String> reserved)
+            throws IOException {
+        String name = job.displayName;
+        if (o.useCustomTitle && o.customTitle != null && !o.customTitle.trim().isEmpty()) {
+            String number = extractLastNumber(job.leafName);
+            name = o.customTitle.trim() + (number.isEmpty() ? "" : " " + number);
+        }
+        name = sanitizeName(name);
+        if (name.isEmpty() || name.equals(".") || name.equals("..")) {
+            throw new IOException("Invalid output name \"" + name + "\" for " + job.displayName);
+        }
+        Path dest = root.resolve(name).normalize();
+        if (!root.equals(dest.getParent()) || isWorkspaceDir(dest)) {
+            throw new IOException("Output name \"" + name + "\" does not resolve inside the root folder");
+        }
+
+        String base = name;
+        int n = 2;
+        while (!reserved.add(name.toLowerCase(Locale.ROOT))) {
+            name = base + " (" + n++ + ")";
+        }
+        return name;
+    }
+
+    /** Strips path separators, characters Windows forbids, control characters and trailing dots/spaces. */
+    static String sanitizeName(String input) {
+        if (input == null) return "";
+        String s = input.replaceAll("[\\\\/:*?\"<>|\\u0000-\\u001F]", "").trim();
+        while (s.endsWith(".") || s.endsWith(" ")) {
+            s = s.substring(0, s.length() - 1);
+        }
+        return s;
+    }
+
+    private static Path uniqueChild(Path parent, String name) {
+        if (name.isEmpty()) name = "archive";
+        Path p = parent.resolve(name);
+        int n = 2;
+        while (Files.exists(p)) {
+            p = parent.resolve(name + "~" + n++);
+        }
+        return p;
+    }
+
+    private static Path uniqueBackupPath(Path target) {
+        String fileName = target.getFileName().toString();
+        int dot = Files.isDirectory(target) ? -1 : fileName.lastIndexOf('.');
+        String stem = dot > 0 ? fileName.substring(0, dot) : fileName;
+        String ext = dot > 0 ? fileName.substring(dot) : "";
+        Path p = target.resolveSibling(stem + "_original" + ext);
+        int n = 2;
+        while (Files.exists(p)) {
+            p = target.resolveSibling(stem + "_original" + n++ + ext);
+        }
+        return p;
+    }
+
+    // ------------------------------------------------------------------ processing
+
+    /**
+     * Transforms every image of the job into the workspace, then stages and publishes
+     * the output. Returns the published path, or null when the folder holds no images
+     * or the run was cancelled. Throws when the output could not be produced; in that
+     * case nothing in the root has been modified for this job.
+     */
+    private static Path processFolderAndCreateOutput(InputJob job, Path rootFolder, Path workspace,
+                                                     String outputName, BatchOptions o, Set<Path> inputPaths)
+            throws IOException {
+        Path folder = job.folder;
+        int splitMode = o.splitMode;
+        boolean isJapaneseManga = o.isJapaneseManga;
+        int skipImagesFromStart = o.skipImagesFromStart;
+        int skipImagesFromEnd = o.skipImagesFromEnd;
+        boolean rotateWideImages = o.rotateWideImages;
+        int cropLeft = o.cropLeft, cropRight = o.cropRight, cropTop = o.cropTop, cropBottom = o.cropBottom;
+        boolean smartAutoCrop = o.smartAutoCrop;
+        int smartAutoCropSensitivity = o.smartAutoCropSensitivity;
 
         List<Path> imagePaths;
         List<Path> processedFiles = new ArrayList<>();
@@ -314,21 +392,21 @@ public class BatchProcessor {
         }
 
         if (imagePaths.isEmpty()) {
-            logMessage("No images found in: " + folder);
+            logMessage("No images found in: " + job.displayName);
             return null;
         }
 
         int totalImages = imagePaths.size();
-        logMessage("Found " + totalImages + " images in " + folder.getFileName());
+        logMessage("Found " + totalImages + " images in " + job.displayName);
 
         // Calculate which images to actually process with exceptions
         int firstImageToProcess = Math.min(skipImagesFromStart, totalImages);
         int lastImageToProcess = Math.max(0, totalImages - skipImagesFromEnd);
         int latestSinglePageImageIndex = -99;
 
-        // Create temp directory for processed images to avoid modifying originals
-        Path tempDir = Files.createTempDirectory("manga_processing_");
-        try { // Wrapped in try-finally to ensure temp directory cleanup
+        // Transformed pages go into the workspace, never next to the originals.
+        Path tempDir = Files.createTempDirectory(workspace, "pages-");
+        try {
 
         // Process each image
         for (int i = 0; i < imagePaths.size(); i++) {
@@ -488,119 +566,225 @@ public class BatchProcessor {
                 processedFiles.add(imagePath);
             }
         }
+        if (isCancelled() || processedFiles.isEmpty()) {
+            return null;
+        }
 
-        if (!processedFiles.isEmpty()) {
-            // Create output based on selected format
-            String folderName = outputName;
-            Path finalPath;
-            
-            // Create the appropriate output based on format
-            if (outputFormat.equals("folder")) {
-                // For folder format, use the original folder name without any suffix
-                finalPath = rootFolder.resolve(folderName);
-                
-                // Create a temporary folder to hold the processed files
-                Path tempFolder = rootFolder.resolve(folderName + "_temp");
-                Files.createDirectories(tempFolder);
-                
-                // Copy all processed files to the temporary folder
-                for (Path file : processedFiles) {
-                    Path targetFile = tempFolder.resolve(file.getFileName());
-                    Files.copy(file, targetFile, StandardCopyOption.REPLACE_EXISTING);
-                }
-                
-                try {
-                    // Check if the folder was created from an archive
-                    boolean wasExtractedFromArchive = extractedFolders.contains(folder);
-                    
-                    if (deleteOriginals) {
-                        // Delete the folder if deleteOriginals is true
-                        deleteDirectory(folder);
-                        logMessage("Deleted " + (wasExtractedFromArchive ? "extracted " : "") + "folder: " + folder.getFileName());
-                    } else if (Files.isSameFile(folder, finalPath) && !wasExtractedFromArchive) {
-                        // Only preserve with "_original" suffix if:
-                        // 1. The path would conflict (same folder name), AND
-                        // 2. It was NOT an extracted archive folder
-                        Path originalFolderPath = rootFolder.resolve(folderName + "_original");
-                        if (Files.exists(originalFolderPath)) {
-                            logMessage("Warning: overwriting previous backup: " + originalFolderPath.getFileName());
-                        }
-                        Files.move(folder, originalFolderPath, StandardCopyOption.REPLACE_EXISTING);
-                        logMessage("Preserved original folder as: " + originalFolderPath.getFileName());
-                    } else if (wasExtractedFromArchive) {
-                        // This was an extracted archive folder, just delete it
-                        deleteDirectory(folder);
-                        logMessage("Cleaned up extracted folder: " + folder.getFileName());
-                    }
-                    // else - original folder with a different name is naturally preserved
-                    
-                    // Move the temp folder to the final path
-                    if (Files.exists(finalPath) && !Files.isSameFile(tempFolder, finalPath)) {
-                        deleteDirectory(finalPath);
-                    }
-                    Files.move(tempFolder, finalPath, StandardCopyOption.REPLACE_EXISTING);
-                    logMessage("Created output folder: " + finalPath.getFileName());
-                } catch (IOException e) {
-                    logMessage("Error finalizing folder: " + e.getMessage());
-                    finalPath = tempFolder; // Use temp folder if something fails
-                }
-            } else {
-                // For archive formats
-                String extension = "." + outputFormat;
-                String archiveFileName = folderName + extension;
-                finalPath = rootFolder.resolve(archiveFileName);
-                
-                // Check if this would overwrite an original archive file (same name and extension)
-                if (!deleteOriginals && Files.exists(finalPath)) {
-                    // This is an original archive with the same name - preserve it by renaming
-                    Path backupPath = rootFolder.resolve(folderName + "_original" + extension);
-                    try {
-                        if (Files.exists(backupPath)) {
-                            logMessage("Warning: overwriting previous backup: " + backupPath.getFileName());
-                        }
-                        Files.move(finalPath, backupPath, StandardCopyOption.REPLACE_EXISTING);
-                        logMessage("Preserved original archive as: " + backupPath.getFileName());
-                    } catch (IOException e) {
-                        logMessage("Error preserving original archive: " + e.getMessage());
-                    }
-                }
-                
-                logMessage("Creating " + outputFormat.toUpperCase() + " archive: " + finalPath.getFileName());
-                
-                switch(outputFormat) {
-                    case "cbz":
-                    case "zip":
-                        ZipArchive.create(processedFiles, finalPath.toFile());
-                        break;
-                    case "cbr":
-                    case "rar":
-                        RarArchive.create(processedFiles, finalPath.toFile(), BatchProcessor::logMessage);
-                        break;
-                }
+        if (o.outputFormat.equals("folder")) {
+            Path finalPath = rootFolder.resolve(outputName);
+            Path staged = Files.createTempDirectory(workspace, "out-");
+            for (Path file : processedFiles) {
+                Files.copy(file, staged.resolve(file.getFileName()), StandardCopyOption.REPLACE_EXISTING);
             }
-            
+            publishDirectory(staged, finalPath, job, o.deleteOriginals, inputPaths);
+            logMessage("Created output folder: " + finalPath.getFileName());
             return finalPath;
         }
 
-        return null;
-        } finally {
-            // Clean up temp directory used for processed images
-            if (Files.exists(tempDir)) {
-                try {
-                    deleteDirectory(tempDir);
-                } catch (IOException e) {
-                    logMessage("Warning: failed to clean up temp directory: " + e.getMessage());
+        String extension = "." + o.outputFormat;
+        Path finalPath = rootFolder.resolve(outputName + extension);
+        Path staged = workspace.resolve(outputName + extension + ".part");
+        logMessage("Creating " + o.outputFormat.toUpperCase() + " archive: " + finalPath.getFileName());
+        switch (o.outputFormat) {
+            case "cbz":
+            case "zip":
+                ZipArchive.create(processedFiles, staged.toFile());
+                verifyZip(staged, processedFiles.size());
+                break;
+            case "cbr":
+            case "rar":
+                RarArchive.create(processedFiles, staged.toFile(), BatchProcessor::logMessage);
+                if (!Files.isRegularFile(staged) || Files.size(staged) == 0) {
+                    throw new IOException("archive was not written");
                 }
+                break;
+            default:
+                throw new IOException("Unknown output format: " + o.outputFormat);
+        }
+        publishFile(staged, finalPath, job, o.deleteOriginals);
+        return finalPath;
+
+        } finally {
+            try {
+                deleteDirectory(tempDir);
+            } catch (IOException e) {
+                logMessage("Warning: failed to clean up temp directory: " + e.getMessage());
             }
         }
     }
-    
 
+    private static void verifyZip(Path zip, int expectedEntries) throws IOException {
+        try (ZipFile zf = new ZipFile(zip.toFile())) {
+            if (zf.size() != expectedEntries) {
+                throw new IOException("archive holds " + zf.size() + " entries, expected " + expectedEntries);
+            }
+        }
+    }
 
-    
-    
+    // ------------------------------------------------------------------ publication
+
+    /**
+     * Moves a fully written staged file to its destination. An existing file there is
+     * replaced only when it is this job's own source archive and originals are to be
+     * deleted; anything else (including another input archive, which has already been
+     * extracted by now) is renamed to a unique backup first. A directory in the way is
+     * never touched.
+     */
+    private static void publishFile(Path staged, Path finalPath, InputJob job, boolean deleteOriginals)
+            throws IOException {
+        if (Files.exists(finalPath)) {
+            if (Files.isDirectory(finalPath)) {
+                throw new IOException("destination " + finalPath.getFileName() + " is an existing folder");
+            }
+            boolean ownSource = job.archive != null && Files.isSameFile(finalPath, job.archive);
+            if (ownSource && deleteOriginals) {
+                logMessage("Replacing original archive: " + finalPath.getFileName());
+            } else {
+                Path backup = uniqueBackupPath(finalPath);
+                Files.move(finalPath, backup);
+                logMessage("Preserved existing " + finalPath.getFileName() + " as: " + backup.getFileName());
+            }
+        }
+        moveIntoPlace(staged, finalPath);
+    }
+
+    /**
+     * Moves a fully staged output directory to its destination. An existing directory
+     * there is deleted only when it is this job's own source folder and originals are
+     * to be deleted; anything else is renamed to a unique backup first.
+     */
+    private static void publishDirectory(Path staged, Path finalPath, InputJob job, boolean deleteOriginals,
+                                         Set<Path> inputPaths) throws IOException {
+        if (Files.exists(finalPath)) {
+            boolean ownSource = job.archive == null && Files.isSameFile(finalPath, job.folder);
+            if (!ownSource && Files.isDirectory(finalPath) && inputPaths.contains(finalPath.normalize())) {
+                throw new IOException("destination " + finalPath.getFileName() + " is another input of this run");
+            }
+            if (ownSource && deleteOriginals) {
+                deleteDirectory(finalPath);
+                logMessage("Deleted original folder (replaced by output): " + finalPath.getFileName());
+            } else {
+                Path backup = uniqueBackupPath(finalPath);
+                Files.move(finalPath, backup);
+                logMessage("Preserved existing " + finalPath.getFileName() + " as: " + backup.getFileName());
+            }
+        }
+        moveIntoPlace(staged, finalPath);
+    }
+
+    private static void moveIntoPlace(Path staged, Path finalPath) throws IOException {
+        try {
+            Files.move(staged, finalPath, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            Files.move(staged, finalPath);
+        }
+    }
+
+    // ------------------------------------------------------------------ cleanup
+
+    /**
+     * Deletes the inputs that may be deleted: only sources of jobs that were published,
+     * only when the user asked for it, and an archive only if every job derived from
+     * it succeeded. Extracted folders live in the workspace and vanish with it.
+     */
+    private static void cleanUp(BatchOptions o, Path root, List<ExtractedArchive> archives, List<InputJob> jobs,
+                                Map<InputJob, Path> published, List<InputJob> failed, BatchResult result) {
+        if (!o.deleteOriginals) {
+            return;
+        }
+
+        // Original archives.
+        for (ExtractedArchive ea : archives) {
+            if (!ea.ok) continue;
+            List<InputJob> derived = jobs.stream().filter(j -> ea.archive.equals(j.archive)).collect(Collectors.toList());
+            boolean allPublished = !derived.isEmpty() && derived.stream().allMatch(published::containsKey);
+            if (!allPublished) {
+                logMessage("Keeping original archive (not fully processed): " + ea.archive.getFileName());
+                continue;
+            }
+            if (!Files.exists(ea.archive) || result.outputs.stream().anyMatch(out -> samePath(out, ea.archive))) {
+                continue; // already replaced by its own output, or moved aside as a backup
+            }
+            try {
+                Files.delete(ea.archive);
+                logMessage("Deleted original archive: " + ea.archive.getFileName());
+            } catch (IOException e) {
+                logMessage("Error deleting archive: " + ea.archive + " - " + e.getMessage());
+            }
+        }
+
+        // User folders. In flatten mode a top-level folder goes only when all of its volumes succeeded.
+        Set<Path> topLevels = new HashSet<>();
+        for (InputJob job : jobs) {
+            if (job.archive == null && job.topLevel != null) topLevels.add(job.topLevel);
+        }
+        for (Path top : topLevels) {
+            List<InputJob> under = jobs.stream().filter(j -> top.equals(j.topLevel)).collect(Collectors.toList());
+            boolean allOk = under.stream().allMatch(published::containsKey);
+            if (!allOk) {
+                logMessage("Keeping original folder (not fully processed): " + top.getFileName());
+                continue;
+            }
+            if (!Files.exists(top)) {
+                continue; // already replaced by a same-name output
+            }
+            boolean holdsOutput = result.outputs.stream().anyMatch(out -> out.startsWith(top) || samePath(out, top));
+            if (holdsOutput || !top.startsWith(root) || top.equals(root)) {
+                continue;
+            }
+            try {
+                deleteDirectory(top);
+                logMessage("Deleted original folder: " + top.getFileName());
+            } catch (IOException e) {
+                logMessage("Error deleting folder: " + top + " - " + e.getMessage());
+            }
+        }
+    }
+
+    /** Every path that belongs to an input of this run: source folders (and their top-level parents) and archives. */
+    private static Set<Path> inputPaths(List<InputJob> jobs, List<ExtractedArchive> archives) {
+        Set<Path> set = new HashSet<>();
+        for (InputJob job : jobs) {
+            if (job.archive == null) {
+                set.add(job.folder.normalize());
+                if (job.topLevel != null) set.add(job.topLevel.normalize());
+            }
+        }
+        for (ExtractedArchive ea : archives) {
+            set.add(ea.archive.normalize());
+        }
+        return set;
+    }
+
+    private static boolean samePath(Path a, Path b) {
+        try {
+            return Files.exists(a) && Files.exists(b) && Files.isSameFile(a, b);
+        } catch (IOException e) {
+            return a.normalize().equals(b.normalize());
+        }
+    }
+
+    // ------------------------------------------------------------------ helpers
+
+    private static boolean isCancelled() {
+        return Thread.currentThread().isInterrupted() || (ui != null && ui.isCancelled());
+    }
+
+    private static void logMessage(String message) {
+        System.out.println(message);
+        if (ui != null) {
+            ui.log(message);
+        }
+    }
+
+    private static void updateProgress(String status, int percentage) {
+        if (ui != null) {
+            ui.progress(status, percentage);
+        }
+    }
 
     private static void deleteDirectory(Path directory) throws IOException {
+        if (!Files.exists(directory)) return;
         try (Stream<Path> walk = Files.walk(directory)) {
             walk.sorted((a, b) -> b.compareTo(a)) // Reverse order to delete children first
                 .forEach(path -> {
@@ -614,8 +798,18 @@ public class BatchProcessor {
     }
 
     private static boolean isImageFile(String filePath) {
-        String lowerCase = filePath.toLowerCase();
+        String lowerCase = filePath.toLowerCase(Locale.ROOT);
         for (String ext : IMAGE_EXTENSIONS) {
+            if (lowerCase.endsWith(ext)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isArchiveFile(String filePath) {
+        String lowerCase = filePath.toLowerCase(Locale.ROOT);
+        for (String ext : ARCHIVE_EXTENSIONS) {
             if (lowerCase.endsWith(ext)) {
                 return true;
             }
@@ -629,16 +823,4 @@ public class BatchProcessor {
         while (m.find()) last = m.group();
         return last;
     }
-
-    private static boolean isArchiveFile(String filePath) {
-        String lowerCase = filePath.toLowerCase();
-        for (String ext : ARCHIVE_EXTENSIONS) {
-            if (lowerCase.endsWith(ext)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-
 }
