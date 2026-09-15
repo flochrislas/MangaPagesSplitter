@@ -31,6 +31,12 @@ public class MangaPagesSplitterUI extends JFrame {
     // Crop options
     private JSpinner cropLeftSpinner, cropRightSpinner, cropTopSpinner, cropBottomSpinner;
     private int cropLeft = 0, cropRight = 0, cropTop = 0, cropBottom = 0;
+
+    // Smart autocrop options
+    private JCheckBox smartAutoCropCheckbox;
+    private JSpinner smartAutoCropSensitivitySpinner;
+    private boolean smartAutoCrop = false;
+    private int smartAutoCropSensitivity = 5;
     
     // Output format selection
     private JRadioButton cbzFormatRadio, cbrFormatRadio, zipFormatRadio, rarFormatRadio, folderFormatRadio;
@@ -57,6 +63,11 @@ public class MangaPagesSplitterUI extends JFrame {
     private boolean flattenDirectories = false;
     private boolean useCustomTitle = false;
     private String customTitle = "";
+
+    // True once processing has started (or completed) for the current source folder.
+    // While true, the log pane keeps showing the processing log instead of being
+    // overwritten by the settings preview. Cleared when the user picks a new source.
+    private boolean logShowsProcessingResults = false;
     
     public MangaPagesSplitterUI() {
         setTitle("Manga Pages Splitter");
@@ -180,6 +191,18 @@ public class MangaPagesSplitterUI extends JFrame {
         cropTopSpinner.setPreferredSize(spinnerSize);
         cropBottomSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 1000, 1));
         cropBottomSpinner.setPreferredSize(spinnerSize);
+
+        // Smart autocrop
+        smartAutoCropCheckbox = new JCheckBox("Smart autocrop outer margins");
+        smartAutoCropCheckbox.setToolTipText(
+            "<html>Detects uniform white/black scan borders around a page and trims them.<br>"
+            + "For landscape double-page spreads it also detects the spine so the split<br>"
+            + "cut lands exactly on the seam instead of at width / 2.</html>");
+        smartAutoCropSensitivitySpinner = new JSpinner(new SpinnerNumberModel(5, 1, 10, 1));
+        smartAutoCropSensitivitySpinner.setPreferredSize(spinnerSize);
+        smartAutoCropSensitivitySpinner.setEnabled(false);
+        smartAutoCropSensitivitySpinner.setToolTipText(
+            "1 = conservative (only trims very clean margins), 10 = aggressive.");
         
         // Output format options
         ButtonGroup formatGroup = new ButtonGroup();
@@ -242,9 +265,19 @@ public class MangaPagesSplitterUI extends JFrame {
         westPanel.setPreferredSize(new Dimension(300, 400));
         
         // Add crop options panel first
-        JPanel cropPanel = createSectionPanel("Image Cropping (applied before splitting)", 280, 115);
+        JPanel cropPanel = createSectionPanel("Image Cropping (applied before splitting)", 280, 175);
         cropPanel.setLayout(new BoxLayout(cropPanel, BoxLayout.Y_AXIS));
         cropPanel.add(Box.createRigidArea(new Dimension(0, 5)));
+
+        // Smart autocrop row
+        JPanel smartAutoCropPanel = createFixedHeightPanel(30);
+        smartAutoCropPanel.add(smartAutoCropCheckbox);
+        cropPanel.add(smartAutoCropPanel);
+
+        JPanel smartAutoCropSensitivityPanel = createFixedHeightPanel(30);
+        smartAutoCropSensitivityPanel.add(new JLabel("Sensitivity (1-10):"));
+        smartAutoCropSensitivityPanel.add(smartAutoCropSensitivitySpinner);
+        cropPanel.add(smartAutoCropSensitivityPanel);
 
         // Left and right crop panel
         JPanel leftRightPanel = createFixedHeightPanel(34);
@@ -482,6 +515,9 @@ public class MangaPagesSplitterUI extends JFrame {
                 rootFolder = chooser.getSelectedFile().getAbsolutePath();
                 rootFolderField.setForeground(UIManager.getColor("TextField.foreground"));
                 rootFolderField.setText(rootFolder);
+                // New source folder: drop the stale run log so updatePreview() can
+                // show the settings preview for the freshly selected input again.
+                logShowsProcessingResults = false;
                 updateInputFilesPane();
                 updatePreview();
             }
@@ -629,6 +665,25 @@ public class MangaPagesSplitterUI extends JFrame {
         cropRightSpinner.addChangeListener(cropListener);
         cropTopSpinner.addChangeListener(cropListener);
         cropBottomSpinner.addChangeListener(cropListener);
+
+        // Smart autocrop
+        smartAutoCropCheckbox.addActionListener(e -> {
+            smartAutoCrop = smartAutoCropCheckbox.isSelected();
+            smartAutoCropSensitivitySpinner.setEnabled(smartAutoCrop);
+            setManualCropEnabled(!smartAutoCrop);
+            updatePreview();
+        });
+        smartAutoCropSensitivitySpinner.addChangeListener(e -> {
+            smartAutoCropSensitivity = (Integer) smartAutoCropSensitivitySpinner.getValue();
+            updatePreview();
+        });
+    }
+
+    private void setManualCropEnabled(boolean enabled) {
+        cropLeftSpinner.setEnabled(enabled);
+        cropRightSpinner.setEnabled(enabled);
+        cropTopSpinner.setEnabled(enabled);
+        cropBottomSpinner.setEnabled(enabled);
     }
     
     /**
@@ -755,6 +810,9 @@ public class MangaPagesSplitterUI extends JFrame {
             rootFolder = dir.getAbsolutePath();
             rootFolderField.setForeground(UIManager.getColor("TextField.foreground"));
             rootFolderField.setText(rootFolder);
+            // New source folder: drop the stale run log so updatePreview() can
+            // show the settings preview for the freshly selected input again.
+            logShowsProcessingResults = false;
             updateInputFilesPane();
             updatePreview();
         } else {
@@ -890,8 +948,10 @@ public class MangaPagesSplitterUI extends JFrame {
             text.append("Image rotation: Wide images will be rotated 90° clockwise\n");
         }
         
-        // Crop information
-        if (cropLeft > 0 || cropRight > 0 || cropTop > 0 || cropBottom > 0) {
+        // Crop information (smart and manual are mutually exclusive)
+        if (smartAutoCrop) {
+            text.append("Smart autocrop: enabled (sensitivity=").append(smartAutoCropSensitivity).append(")\n");
+        } else if (cropLeft > 0 || cropRight > 0 || cropTop > 0 || cropBottom > 0) {
             text.append("Cropping: ");
             text.append("Left=" + cropLeft + "px, ");
             text.append("Right=" + cropRight + "px, ");
@@ -936,8 +996,11 @@ public class MangaPagesSplitterUI extends JFrame {
             text.append("- Create one output file per nested manga sub-folder\n");
         }
         
-        // Add cropping step if needed
-        if (cropLeft > 0 || cropRight > 0 || cropTop > 0 || cropBottom > 0) {
+        // Add cropping step if needed (smart and manual are mutually exclusive)
+        if (smartAutoCrop) {
+            text.append("- Smart-autocrop uniform outer margins on each image; ")
+                .append("for double-page spreads, split on the detected spine\n");
+        } else if (cropLeft > 0 || cropRight > 0 || cropTop > 0 || cropBottom > 0) {
             text.append("- Crop " + cropLeft + "px from left, " + cropRight + "px from right, " +
                        cropTop + "px from top, " + cropBottom + "px from bottom of each image\n");
         }
@@ -982,8 +1045,12 @@ public class MangaPagesSplitterUI extends JFrame {
             text.append("- Delete original archive files and extracted folders\n");
         }
         
-        // Show preview in the log area now
-        logArea.setText(text.toString());
+        // Only replace the log pane with the settings preview if we're not currently
+        // showing (or holding) processing output. This keeps the run log visible after
+        // a batch finishes until the user chooses a different source folder.
+        if (!logShowsProcessingResults) {
+            logArea.setText(text.toString());
+        }
     }
     
     private void startProcessing() {
@@ -1002,10 +1069,22 @@ public class MangaPagesSplitterUI extends JFrame {
         cropRight = (Integer) cropRightSpinner.getValue();
         cropTop = (Integer) cropTopSpinner.getValue();
         cropBottom = (Integer) cropBottomSpinner.getValue();
+        smartAutoCrop = smartAutoCropCheckbox.isSelected();
+        smartAutoCropSensitivity = (Integer) smartAutoCropSensitivitySpinner.getValue();
+
+        // Smart autocrop and manual crop are mutually exclusive: when smart is on,
+        // ignore whatever is currently sitting in the manual crop spinners.
+        int effectiveCropLeft   = smartAutoCrop ? 0 : cropLeft;
+        int effectiveCropRight  = smartAutoCrop ? 0 : cropRight;
+        int effectiveCropTop    = smartAutoCrop ? 0 : cropTop;
+        int effectiveCropBottom = smartAutoCrop ? 0 : cropBottom;
         
         // Update UI for processing state
         setProcessingState(true);
         clearLog();
+        // From now on, the log pane holds the processing output; updatePreview() will
+        // leave it alone until the user picks a new source folder.
+        logShowsProcessingResults = true;
         appendToLog("Starting manga processing...");
         appendToLog("Root folder: " + rootFolder);
         
@@ -1025,9 +1104,12 @@ public class MangaPagesSplitterUI extends JFrame {
                     }
                     
                     // Add logging for crop values if any
-                    if (cropLeft > 0 || cropRight > 0 || cropTop > 0 || cropBottom > 0) {
-                        publish("Cropping: Left=" + cropLeft + "px, Right=" + cropRight + 
-                               "px, Top=" + cropTop + "px, Bottom=" + cropBottom + "px");
+                    if (smartAutoCrop) {
+                        publish("Smart autocrop: enabled (sensitivity=" + smartAutoCropSensitivity + ")");
+                    } else if (effectiveCropLeft > 0 || effectiveCropRight > 0
+                            || effectiveCropTop > 0 || effectiveCropBottom > 0) {
+                        publish("Cropping: Left=" + effectiveCropLeft + "px, Right=" + effectiveCropRight +
+                               "px, Top=" + effectiveCropTop + "px, Bottom=" + effectiveCropBottom + "px");
                     }
                     
                     if (rotateWideImages && splitMode != 2) {
@@ -1043,7 +1125,8 @@ public class MangaPagesSplitterUI extends JFrame {
                     MangaPagesSplitter.processWithUI(
                         rootFolder, splitMode, isJapaneseManga, deleteOriginals,
                         skipImagesFromStart, skipImagesFromEnd, rotateWideImages,
-                        outputFormat, cropLeft, cropRight, cropTop, cropBottom,
+                        outputFormat, effectiveCropLeft, effectiveCropRight, effectiveCropTop, effectiveCropBottom,
+                        smartAutoCrop, smartAutoCropSensitivity,
                         flattenDirectories, useCustomTitle, customTitleField.getText().trim(),
                         MangaPagesSplitterUI.this);
                     
@@ -1123,10 +1206,14 @@ public class MangaPagesSplitterUI extends JFrame {
         deleteFilesRadio.setEnabled(!processing);
         
         // Disable crop spinners during processing
-        cropLeftSpinner.setEnabled(!processing);
-        cropRightSpinner.setEnabled(!processing);
-        cropTopSpinner.setEnabled(!processing);
-        cropBottomSpinner.setEnabled(!processing);
+        // Manual crop is also disabled whenever smart autocrop is on (mutually exclusive).
+        boolean manualCropAllowed = !processing && !smartAutoCrop;
+        cropLeftSpinner.setEnabled(manualCropAllowed);
+        cropRightSpinner.setEnabled(manualCropAllowed);
+        cropTopSpinner.setEnabled(manualCropAllowed);
+        cropBottomSpinner.setEnabled(manualCropAllowed);
+        smartAutoCropCheckbox.setEnabled(!processing);
+        smartAutoCropSensitivitySpinner.setEnabled(!processing && smartAutoCrop);
         
         // Disable format selection while processing
         cbzFormatRadio.setEnabled(!processing);

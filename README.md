@@ -27,6 +27,7 @@ You get a manga made of images that look like this:
 - Can automatically detect when to split an image or not, and even preserve special double-page spreads if they are in an otherwise single paged manga.
 - Can automatically rotate double-page spreads 90 degrees clockwise.
 - Can crop images from all four sides (left, right, top, bottom) before processing.
+- **Smart autocrop** can automatically detect and trim uniform white/black scan borders on every image, and for landscape double-page spreads it locates the actual spine so each split page comes out centered without a useless outer white border.
 - Choose the output format: CBZ, CBR, ZIP, RAR, or a plain folder with images.
 - Choose the reading direction: Japanese (right to left) or Western (left to right).
 - Choose to keep or delete the original input files after processing.

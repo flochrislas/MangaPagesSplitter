@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Smart autocrop outer margins** — new checkbox in the *Image Cropping*
+  panel. When enabled, MangaPagesSplitter analyzes each image to trim
+  uniform white/black scan borders on all four sides (with a small
+  safety padding), and on landscape double-page spreads locates the
+  actual spine / gutter so the split cut lands exactly on the seam
+  instead of at `width / 2`. The detector samples the four corners for
+  a background reference and counts how many pixels in each column /
+  row deviate meaningfully from it, so thin details protruding into a
+  dark margin (e.g. a sword handle) stop the crop where they should
+  instead of getting shaved. A `1`–`10` sensitivity spinner tunes how
+  aggressive the detector is; images whose corners aren't uniform
+  background (e.g. full-bleed art pages) are left untouched.
+
+### Changed
+- Smart autocrop and manual four-side cropping are now **mutually
+  exclusive**. Enabling smart autocrop disables the manual L/R/T/B
+  spinners so leftover manual values can't silently over-crop a batch.
+  Turn smart autocrop off to use fixed manual offsets again.
+
 ## [2.2.2] - 2026-06-28
 
 ### Changed
