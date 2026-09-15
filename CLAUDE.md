@@ -20,7 +20,10 @@ mvn package -Psign-exe -Dsigning.keystore=path\to\keystore.pfx -Dsigning.storepa
 java -jar target/MangaPagesSplitter-<version>-jar-with-dependencies.jar
 ```
 
-There are no tests configured in this project.
+```bash
+# Run the unit tests (JUnit 5, src/test/java)
+mvn test
+```
 
 ## Releasing
 
@@ -39,13 +42,19 @@ CI builds the JAR + the Windows portable ZIP, extracts the matching CHANGELOG se
 
 ## Architecture
 
-The application consists of two classes with no package structure (default package):
+All code lives under the `mangapagessplitter` package (`src/main/java/mangapagessplitter/`):
 
-- **`MangaPagesSplitter`** — Entry point (`main()`) and all processing logic: archive extraction, image splitting/cropping/rotation, and output archive creation. Orchestrates the pipeline: extract archives → process each folder's images → create output (CBZ/CBR/ZIP/RAR/folder).
+- **`Main`** — Entry point: applies the saved FlatLaf theme and opens the window.
+- **`BatchProcessor`** — Batch orchestration: discovers folders and archives under the root, extracts archives, runs every image through crop → split decision → rotation → split → second-pass autocrop, writes the output (CBZ/CBR/ZIP/RAR/folder) and cleans up. Talks to the UI only through `ProcessingListener`.
+- **`ProcessingListener`** — What the engine needs from its driver: `isCancelled()`, `log()`, `progress()`.
+- **`image.AutoCrop` / `AutoCropResult`** — Smart autocrop: margin trimming and spine detection. Pure image analysis, documented in `doc/autocrop.md`.
+- **`image.PageTransform`** — Manual crop, 90° rotation, double-page split (`doc/autosplit.md`).
+- **`archive.ZipArchive`** — ZIP/CBZ extract and create with `java.util.zip`.
+- **`archive.RarArchive`** — RAR/CBR: junrar extraction with external-tool fallback; RAR creation with ZIP fallback.
+- **`archive.ExternalTools`** — 7-Zip / WinRAR discovery and process execution.
+- **`ui.MangaPagesSplitterUI`** — Swing `JFrame`. Collects configuration, runs `BatchProcessor.processWithUI()` on a `SwingWorker`, implements `ProcessingListener` to show the log and progress bar.
 
-- **`MangaPagesSplitterUI`** — Swing GUI built with `JFrame`. Collects user configuration (split mode, reading direction, crop values, output format, rotation, exception images). Launches processing on a `SwingWorker` background thread and displays real-time progress via a log pane and progress bar.
-
-The UI calls `MangaPagesSplitter.processWithUI()`, passing all configuration. Processing callbacks update the UI's log and progress bar.
+Tests are under `src/test/java` mirroring the package layout. `test_images/` holds two real scans used by the autocrop tests (skipped when absent).
 
 ## Key Processing Logic
 

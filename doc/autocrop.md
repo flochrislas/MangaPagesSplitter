@@ -6,9 +6,10 @@ than at the geometric middle of the image. It is an alternative to the manual
 left/right/top/bottom crop values: the manual values are fixed offsets applied to
 every image, whereas smart autocrop measures each image individually.
 
-All logic lives in `src/main/java/MangaPagesSplitter.java`, in
-`smartAutoCropImage` and the helpers below it. The UI controls are in
-`src/main/java/MangaPagesSplitterUI.java`.
+All logic lives in `src/main/java/mangapagessplitter/image/AutoCrop.java`;
+the entry point is `AutoCrop.apply`. Regression tests are in
+`src/test/java/mangapagessplitter/image/AutoCropTest.java`. The UI controls are
+in `src/main/java/mangapagessplitter/ui/MangaPagesSplitterUI.java`.
 
 ## Using it
 
@@ -38,13 +39,13 @@ Other log lines you may see are explained in the sections below.
 
 For each image:
 
-1. **Primary pass.** `smartAutoCropImage` runs on the full image with spine
+1. **Primary pass.** `AutoCrop.apply` runs on the full image with spine
    detection enabled. It trims the outer margins and, for landscape images,
    returns the X coordinate of the detected gutter.
 2. **Split.** If the image is landscape (or forced by the split mode), it is cut
    at the detected gutter, falling back to `width / 2` when no gutter was found.
    The log line `Split image (...) at detected gutter x=1378` shows which.
-3. **Second pass on each half.** Each half is run through `smartAutoCropImage`
+3. **Second pass on each half.** Each half is run through `AutoCrop.apply`
    again with spine detection disabled. This removes the half-gutter whitespace
    that ends up on the inner side of each page, plus any page-number strip or
    watermark that only becomes an outer margin once the page stands alone.

@@ -6,9 +6,10 @@ order, so a volume reads naturally on a phone or tablet. This document covers
 how an image is decided to be a spread, where the cut is placed, how the halves
 are ordered and named, and the options that influence it.
 
-The decision and split logic lives in `src/main/java/MangaPagesSplitter.java`
-(the per-image loop in the folder processing method and `splitImage`). The
-options are in `src/main/java/MangaPagesSplitterUI.java`.
+The spread decision lives in the per-image loop of
+`src/main/java/mangapagessplitter/BatchProcessor.java`; the cut itself is
+`PageTransform.split` in `src/main/java/mangapagessplitter/image/PageTransform.java`.
+The options are in `src/main/java/mangapagessplitter/ui/MangaPagesSplitterUI.java`.
 
 ## Options
 
@@ -73,7 +74,7 @@ including portrait ones.
 
 ## Where the cut lands
 
-`splitImage` cuts at a single X coordinate:
+`PageTransform.split` cuts at a single X coordinate:
 
 - If **smart autocrop** is on and its spine detection found the gutter, the cut
   is placed at that column. The log reads
