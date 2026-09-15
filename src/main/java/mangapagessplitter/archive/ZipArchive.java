@@ -22,18 +22,19 @@ public final class ZipArchive {
             ZipEntry entry;
             byte[] buffer = new byte[1024];
 
+            String destRoot = destDir.getCanonicalPath() + File.separator;
             while ((entry = zis.getNextEntry()) != null) {
-                if (entry.isDirectory()) {
-                    File newDir = new File(destDir, entry.getName());
-                    Files.createDirectories(newDir.toPath());
-                    continue;
-                }
-
                 File outputFile = new File(destDir, entry.getName());
 
-                // Validate path to prevent Zip Slip vulnerability
-                if (!outputFile.getCanonicalPath().startsWith(destDir.getCanonicalPath() + File.separator)) {
+                // Validate every entry, directories included, before any filesystem write
+                // (Zip Slip: "../x", absolute paths, or a prefix trick like "dest2/x").
+                if (!outputFile.getCanonicalPath().startsWith(destRoot)) {
                     throw new IOException("Zip entry outside target dir: " + entry.getName());
+                }
+
+                if (entry.isDirectory()) {
+                    Files.createDirectories(outputFile.toPath());
+                    continue;
                 }
 
                 // Create parent directories if they don't exist

@@ -40,6 +40,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the failed items.
 - RAR/CBR archives that neither junrar nor an external tool could extract are
   now reported as failures instead of being silently treated as empty.
+- ZIP/CBZ extraction now validates directory entries as well as file entries,
+  so a crafted archive can no longer create folders outside the extraction
+  directory.
+
+### Security
+- junrar upgraded from 7.5.5 to 8.1.1, covering the published advisories for
+  path traversal (GHSA-j273-m5qq-6825, GHSA-hf5p-q87m-crj7,
+  GHSA-89m4-43j5-vhhx) and the RAR4 infinite-loop denial of service
+  (GHSA-h9h9-2rmf-rvhp).
 
 ### Changed
 - Smart autocrop and manual four-side cropping are now **mutually

@@ -65,7 +65,7 @@ Tests are under `src/test/java` mirroring the package layout. `test_images/` hol
 
 ## Dependencies
 
-- **junrar 7.5.5** — RAR archive extraction (RAR4 and below)
+- **junrar 8.1.1** — RAR archive extraction (RAR4 and below). Keep it at or above 7.6.1: older releases have published path-traversal and infinite-loop advisories.
 - **flatlaf 3.7** — Modern Swing look-and-feel with dark/light themes
 - **jpackage** (JDK 14+ tool, invoked via `exec-maven-plugin`) — Produces
   the self-contained Windows app-image (launcher EXE + bundled JRE) during

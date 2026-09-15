@@ -52,6 +52,36 @@ class ZipArchiveTest {
     }
 
     @Test
+    void extractRejectsDirectoryEntryOutsideDestination() throws IOException {
+        Path zip = tmp.resolve("evil-dir.zip");
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(zip))) {
+            zos.putNextEntry(new ZipEntry("../escaped-directory/"));
+            zos.closeEntry();
+        }
+        Path dest = tmp.resolve("dest");
+        Files.createDirectories(dest);
+
+        assertThrows(IOException.class, () -> ZipArchive.extract(zip.toFile(), dest.toFile()));
+        assertFalse(Files.exists(tmp.resolve("escaped-directory")));
+    }
+
+    @Test
+    void extractRejectsSiblingPrefixTrick() throws IOException {
+        // "dest" must not accept an entry that resolves to "dest2/..." next to it.
+        Path zip = tmp.resolve("prefix.zip");
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(zip))) {
+            zos.putNextEntry(new ZipEntry("../dest2/x.txt"));
+            zos.write("x".getBytes(StandardCharsets.UTF_8));
+            zos.closeEntry();
+        }
+        Path dest = tmp.resolve("dest");
+        Files.createDirectories(dest);
+
+        assertThrows(IOException.class, () -> ZipArchive.extract(zip.toFile(), dest.toFile()));
+        assertFalse(Files.exists(tmp.resolve("dest2")));
+    }
+
+    @Test
     void extractCreatesNestedDirectoriesForNestedEntries() throws IOException {
         Path zip = tmp.resolve("nested.zip");
         try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(zip))) {
