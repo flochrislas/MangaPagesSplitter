@@ -1,8 +1,10 @@
-package mangapagessplitter;
+package mangapagessplitter.ui;
 
 import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatLaf;
 import com.formdev.flatlaf.FlatLightLaf;
+import mangapagessplitter.BatchProcessor;
+import mangapagessplitter.ProcessingListener;
 
 import javax.swing.*;
 import javax.swing.border.*;
@@ -16,7 +18,7 @@ import java.util.Date;
 import java.util.concurrent.ExecutionException;
 import java.util.prefs.Preferences;
 
-public class MangaPagesSplitterUI extends JFrame {
+public class MangaPagesSplitterUI extends JFrame implements ProcessingListener {
     // Main configuration objects
     private JTextField rootFolderField;
     private JButton browseButton;
@@ -1124,7 +1126,7 @@ public class MangaPagesSplitterUI extends JFrame {
                     
                     // Call MangaPagesSplitter to do the actual processing
                     // Pass the UI instance, output format, and crop values
-                    MangaPagesSplitter.processWithUI(
+                    BatchProcessor.processWithUI(
                         rootFolder, splitMode, isJapaneseManga, deleteOriginals,
                         skipImagesFromStart, skipImagesFromEnd, rotateWideImages,
                         outputFormat, effectiveCropLeft, effectiveCropRight, effectiveCropTop, effectiveCropBottom,
@@ -1240,19 +1242,21 @@ public class MangaPagesSplitterUI extends JFrame {
         }
     }
     
+    @Override
     public boolean isCancelled() {
         return currentWorker != null && currentWorker.isCancelled();
     }
     
-    public void updateProgress(String status, int percentage) {
+    @Override
+    public void progress(String status, int percentage) {
         SwingUtilities.invokeLater(() -> {
             progressBar.setValue(percentage);
             progressBar.setString(status + " (" + percentage + "%)");
         });
     }
     
-    // Update publishLogMessage to be simpler - directly publish to the worker
-    public void publishLogMessage(String message) {
+    @Override
+    public void log(String message) {
         if (currentWorker != null && !currentWorker.isCancelled()) {
             SwingUtilities.invokeLater(() -> appendToLog(message));
         }
@@ -1374,21 +1378,5 @@ public class MangaPagesSplitterUI extends JFrame {
             case 2: return "Split all";
             default: return "Unknown";
         }
-    }
-    
-    public static void main(String[] args) {
-        try {
-            boolean darkTheme = Preferences.userRoot()
-                    .node("MangaPagesSplitter").getBoolean("darkTheme", true);
-            if (darkTheme) {
-                FlatDarkLaf.setup();
-            } else {
-                FlatLightLaf.setup();
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        SwingUtilities.invokeLater(() -> new MangaPagesSplitterUI().setVisible(true));
     }
 }

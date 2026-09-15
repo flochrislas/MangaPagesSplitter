@@ -83,7 +83,7 @@
         <configuration>
           <archive>
             <manifest>
-              <mainClass>mangapagessplitter.MangaPagesSplitter</mainClass>
+              <mainClass>mangapagessplitter.Main</mainClass>
             </manifest>
           </archive>
           <descriptorRefs>
@@ -163,7 +163,7 @@
                 <argument>--main-jar</argument>
                 <argument>${project.artifactId}-${app.version}-jar-with-dependencies.jar</argument>
                 <argument>--main-class</argument>
-                <argument>mangapagessplitter.MangaPagesSplitter</argument>
+                <argument>mangapagessplitter.Main</argument>
                 <argument>--dest</argument>
                 <argument>${project.build.directory}/jpackage</argument>
                 <argument>--add-modules</argument>

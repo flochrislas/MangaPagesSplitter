@@ -1,8 +1,5 @@
 package mangapagessplitter;
 
-import com.formdev.flatlaf.FlatDarkLaf;
-import com.formdev.flatlaf.FlatLightLaf;
-
 import mangapagessplitter.archive.RarArchive;
 import mangapagessplitter.archive.ZipArchive;
 import mangapagessplitter.image.AutoCrop;
@@ -10,8 +7,6 @@ import mangapagessplitter.image.AutoCropResult;
 import mangapagessplitter.image.PageTransform;
 
 import javax.imageio.ImageIO;
-import javax.swing.*;
-import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.*;
 import java.nio.file.*;
@@ -22,12 +17,12 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-public class MangaPagesSplitter {
+public class BatchProcessor {
 
     private static final String[] IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"};
     private static final String[] ARCHIVE_EXTENSIONS = {".rar", ".zip", ".cbr", ".cbz"};
     
-    private static MangaPagesSplitterUI ui = null;
+    private static ProcessingListener ui = null;
 
     private static class ArchiveExtractionResult {
         public final List<Path> archivePaths;
@@ -40,33 +35,21 @@ public class MangaPagesSplitter {
     }
 
 
-    public static void main(String[] args) {
-        try {
-            boolean darkTheme = java.util.prefs.Preferences.userRoot()
-                    .node("MangaPagesSplitter").getBoolean("darkTheme", true);
-            if (darkTheme) {
-                FlatDarkLaf.setup();
-            } else {
-                FlatLightLaf.setup();
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        SwingUtilities.invokeLater(() -> new MangaPagesSplitterUI().setVisible(true));
-    }
     
-    // Method to be called from the UI - pass the UI instance instead of worker
-    // Updated method signature to include outputFormat
+    /**
+     * Runs the whole batch: extract archives under {@code rootFolder}, process every
+     * folder, create the outputs and clean up. Progress, log lines and cancellation
+     * go through {@code listener}.
+     */
     public static void processWithUI(
             String rootFolder, int splitMode, boolean isJapaneseManga, boolean deleteOriginals,
             int skipImagesFromStart, int skipImagesFromEnd, boolean rotateWideImages, 
             String outputFormat, int cropLeft, int cropRight, int cropTop, int cropBottom,
             boolean smartAutoCrop, int smartAutoCropSensitivity,
             boolean flattenDirectories, boolean useCustomTitle, String customTitle,
-            MangaPagesSplitterUI uiInstance) throws IOException {
-        
-        ui = uiInstance;
+            ProcessingListener listener) throws IOException {
+
+        ui = listener;
         
         try {
             logMessage("Starting extraction of archives...");
@@ -228,13 +211,13 @@ public class MangaPagesSplitter {
     private static void logMessage(String message) {
         System.out.println(message);
         if (ui != null) {
-            SwingUtilities.invokeLater(() -> ui.publishLogMessage(message));
+            ui.log(message);
         }
     }
     
     private static void updateProgress(String status, int percentage) {
         if (ui != null) {
-            SwingUtilities.invokeLater(() -> ui.updateProgress(status, percentage));
+            ui.progress(status, percentage);
         }
     }
 
@@ -291,7 +274,7 @@ public class MangaPagesSplitter {
 
                 if (archivePath.toString().toLowerCase().endsWith(".rar") ||
                     archivePath.toString().toLowerCase().endsWith(".cbr")) {
-                    RarArchive.extract(archivePath, extractDir, MangaPagesSplitter::logMessage);
+                    RarArchive.extract(archivePath, extractDir, BatchProcessor::logMessage);
                 } else {
                     // Extract ZIP
                     ZipArchive.extract(archivePath.toFile(), extractDir.toFile());
@@ -376,7 +359,7 @@ public class MangaPagesSplitter {
                     // Apply smart autocrop first (also detects the spine/gutter for landscape spreads)
                     if (smartAutoCrop) {
                         AutoCropResult autoResult = AutoCrop.apply(img, smartAutoCropSensitivity, true,
-                                MangaPagesSplitter::logMessage);
+                                BatchProcessor::logMessage);
                         if (autoResult.applied) {
                             img = autoResult.image;
                             modified = true;
@@ -396,7 +379,7 @@ public class MangaPagesSplitter {
                     // Apply cropping in memory
                     if (cropLeft > 0 || cropRight > 0 || cropTop > 0 || cropBottom > 0) {
                         img = PageTransform.crop(img, cropLeft, cropRight, cropTop, cropBottom,
-                                MangaPagesSplitter::logMessage);
+                                BatchProcessor::logMessage);
                         modified = true;
 
                         // Manual crop shifts the detected gutter coordinate leftward
@@ -465,7 +448,7 @@ public class MangaPagesSplitter {
                             for (int hi = 0; hi < halves.length; hi++) {
                                 AutoCropResult postCrop = AutoCrop.apply(
                                         halves[hi], smartAutoCropSensitivity, false,
-                                        MangaPagesSplitter::logMessage);
+                                        BatchProcessor::logMessage);
                                 if (postCrop.applied) {
                                     halves[hi] = postCrop.image;
                                 }
@@ -591,7 +574,7 @@ public class MangaPagesSplitter {
                         break;
                     case "cbr":
                     case "rar":
-                        RarArchive.create(processedFiles, finalPath.toFile(), MangaPagesSplitter::logMessage);
+                        RarArchive.create(processedFiles, finalPath.toFile(), BatchProcessor::logMessage);
                         break;
                 }
             }
