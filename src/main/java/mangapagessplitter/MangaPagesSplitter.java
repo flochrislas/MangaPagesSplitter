@@ -6,10 +6,11 @@ import com.github.junrar.exception.RarException;
 import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatLightLaf;
 
+import mangapagessplitter.image.PageTransform;
+
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
-import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
 import java.io.*;
 import java.nio.file.*;
@@ -451,7 +452,8 @@ public class MangaPagesSplitter {
 
                     // Apply cropping in memory
                     if (cropLeft > 0 || cropRight > 0 || cropTop > 0 || cropBottom > 0) {
-                        img = cropImage(img, cropLeft, cropRight, cropTop, cropBottom);
+                        img = PageTransform.crop(img, cropLeft, cropRight, cropTop, cropBottom,
+                                MangaPagesSplitter::logMessage);
                         modified = true;
 
                         // Manual crop shifts the detected gutter coordinate leftward
@@ -494,7 +496,7 @@ public class MangaPagesSplitter {
 
                     // Rotate in memory if requested and not splitting
                     if (rotateWideImages && isWideImage && !shouldSplit) {
-                        img = rotateImage(img);
+                        img = PageTransform.rotate(img);
                         modified = true;
                         logMessage("Rotated wide image: " + imagePath.getFileName());
                     }
@@ -504,7 +506,7 @@ public class MangaPagesSplitter {
                     }
 
                     if (shouldSplit) {
-                        BufferedImage[] halves = splitImage(img, isJapaneseManga, autoSplitX);
+                        BufferedImage[] halves = PageTransform.split(img, isJapaneseManga, autoSplitX);
                         String splitDesc = (autoSplitX > 0)
                                 ? " at detected gutter x=" + autoSplitX
                                 : "";
@@ -666,44 +668,7 @@ public class MangaPagesSplitter {
         }
     }
     
-    private static BufferedImage rotateImage(BufferedImage originalImage) {
-        int width = originalImage.getWidth();
-        int height = originalImage.getHeight();
 
-        BufferedImage rotatedImage = new BufferedImage(height, width, originalImage.getType());
-
-        AffineTransform rotation = new AffineTransform();
-        rotation.translate(height, 0);
-        rotation.rotate(Math.toRadians(90));
-
-        Graphics2D g2d = rotatedImage.createGraphics();
-        g2d.setTransform(rotation);
-        g2d.drawImage(originalImage, 0, 0, null);
-        g2d.dispose();
-
-        return rotatedImage;
-    }
-
-    private static BufferedImage[] splitImage(BufferedImage originalImage, boolean isJapaneseManga, int splitX) {
-        int width = originalImage.getWidth();
-        int height = originalImage.getHeight();
-
-        int cut = (splitX > 0 && splitX < width) ? splitX : width / 2;
-
-        BufferedImage leftHalf = originalImage.getSubimage(0, 0, cut, height);
-        BufferedImage rightHalf = originalImage.getSubimage(cut, 0, width - cut, height);
-
-        BufferedImage firstHalf, secondHalf;
-        if (isJapaneseManga) {
-            firstHalf = rightHalf;
-            secondHalf = leftHalf;
-        } else {
-            firstHalf = leftHalf;
-            secondHalf = rightHalf;
-        }
-
-        return new BufferedImage[]{firstHalf, secondHalf};
-    }
 
     // Renamed to be more specific
     private static void createZipArchive(List<Path> imageFiles, File outputFile) throws IOException {
@@ -910,33 +875,6 @@ public class MangaPagesSplitter {
         return false;
     }
 
-    /**
-     * Crops an image by removing specified number of pixels from each side.
-     *
-     * @param img The original image
-     * @param left Pixels to crop from left
-     * @param right Pixels to crop from right
-     * @param top Pixels to crop from top
-     * @param bottom Pixels to crop from bottom
-     * @return The cropped image
-     */
-    private static BufferedImage cropImage(BufferedImage img, int left, int right, int top, int bottom) {
-        int origWidth = img.getWidth();
-        int origHeight = img.getHeight();
-
-        // Validate crop values don't exceed image dimensions
-        if (left >= origWidth || top >= origHeight || left + right >= origWidth || top + bottom >= origHeight) {
-            logMessage("Warning: crop values exceed image dimensions, skipping crop");
-            return img;
-        }
-
-        // Calculate new dimensions
-        int newWidth = Math.max(1, origWidth - left - right);
-        int newHeight = Math.max(1, origHeight - top - bottom);
-
-        // Create cropped image
-        return img.getSubimage(left, top, newWidth, newHeight);
-    }
 
     /**
      * Detects and trims uniform outer margins (typically the white/black scan borders
