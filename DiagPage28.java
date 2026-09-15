@@ -5,7 +5,7 @@ import javax.imageio.ImageIO;
 
 public class DiagPage28 {
     public static void main(String[] args) throws Exception {
-        String path = "N:\\Manga\\Japanese\\Dragon Quest Aban weird\\test\\DLRAW.TO_Doragon Kuesuto dai no v05\\DLRAW.TO_Net_0028.jpg";
+        String path = "test_images\\0028.jpg";
         BufferedImage img = ImageIO.read(new File(path));
         int W = img.getWidth(), H = img.getHeight();
 

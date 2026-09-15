@@ -22,14 +22,24 @@ of faint "parasite" pixels near a border. Today those pixels are counted as real
 content, so the crawler stops immediately and a large white margin on that side is
 never trimmed.
 
-## Test assets referenced by the user (on the user's machine)
+## Test assets
 
-- Original files: `n:\Manga\Japanese\Dragon Quest Aban weird\test\DLRAW.TO_Doragon Kuesuto dai no v05\`
-- Resulting CBZ: `n:\Manga\Japanese\Dragon Quest Aban weird\test\`
-- Failing image: `DLRAW.TO_Net_0028.jpg` (huge white L/R margins left uncropped
-  because of faint dark pixels on the right border).
-- Previously-fixed reference image: `DLRAW.TO_Net_0041.jpg` (spine/gutter split,
-  now works).
+The two images used during development are now copied **into this repo** under
+`test_images\` so they're always available (the diagnostic programs reference this
+folder via a relative path):
+
+- `test_images\0028.jpg` — the **failing** parasite-pixel case: huge
+  white L/R margins left uncropped because of faint dark pixels on the right border.
+  (originally `DLRAW.TO_Net_0028.jpg` in the source set)
+- `test_images\0041.jpg` — previously-fixed reference: spine/gutter
+  split, now works. (originally `DLRAW.TO_Net_0041.jpg`)
+
+Original source folder on the user's machine (contains the full ~99-page set, if
+you need more samples):
+`N:\Manga\Japanese\Dragon Quest Aban weird\DLRAW.TO_Doragon Kuesuto dai no v05\`
+(note: the old `...\test\...` sub-path from the previous session no longer exists —
+the folder was moved up one level).
+
 
 ## How the feature works today (context you need)
 
@@ -66,7 +76,7 @@ The margin detection uses a **content-pixel-count** criterion (not stddev):
 Helpers: `columnContentCount` (1182), `rowContentCount` (1195),
 `blockMeanAndStddev` (1209), `advanceEdge` (1246).
 
-## Why `DLRAW.TO_Net_0028.jpg` fails
+## Why `0028.jpg` (`DLRAW.TO_Net_0028.jpg`) fails
 
 The right border has a small cluster of faint dark pixels spanning ≥ `minEdgeRun`
 columns, each column reaching `>= minPix` content pixels. So `advanceEdge` returns
