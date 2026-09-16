@@ -80,7 +80,26 @@ public class MangaPagesSplitterUI extends JFrame implements ProcessingListener {
         setTitle("Manga Pages Splitter");
         setSize(900, 975);
         setMinimumSize(new Dimension(800, 975));
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                if (isProcessing()) {
+                    int choice = JOptionPane.showConfirmDialog(MangaPagesSplitterUI.this,
+                            "Processing is still running. Quitting now may leave a half-written output.\n"
+                            + "Cancel the processing and quit anyway?",
+                            "Processing in progress", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+                    if (choice != JOptionPane.YES_OPTION) {
+                        return;
+                    }
+                    if (currentWorker != null) {
+                        currentWorker.cancel(true);
+                    }
+                }
+                dispose();
+                System.exit(0);
+            }
+        });
         setLocationRelativeTo(null);
         
         initComponents();
@@ -653,9 +672,11 @@ public class MangaPagesSplitterUI extends JFrame implements ProcessingListener {
         // Cancel button
         cancelButton.addActionListener(e -> {
             if (currentWorker != null && !currentWorker.isDone()) {
+                // The engine polls the flag and stops at the next safe point; Start stays
+                // disabled until engineStopped() confirms no file operation is running.
                 currentWorker.cancel(true);
-                appendToLog("Processing cancelled by user.");
-                resetUIAfterProcessing();
+                cancelButton.setEnabled(false);
+                appendToLog("Cancelling... waiting for the current operation to stop.");
             }
         });
         
@@ -1118,6 +1139,16 @@ public class MangaPagesSplitterUI extends JFrame implements ProcessingListener {
         currentWorker = new SwingWorker<BatchResult, String>() {
             @Override
             protected BatchResult doInBackground() throws Exception {
+                try {
+                    return runBatch();
+                } finally {
+                    // Runs when the engine has really returned, unlike done(), which fires as
+                    // soon as cancel() is called.
+                    SwingUtilities.invokeLater(() -> engineStopped(isCancelled()));
+                }
+            }
+
+            private BatchResult runBatch() throws Exception {
                 publish("Split mode: " + getSplitModeName(splitMode));
                 if (splitMode == 0 || splitMode == 2) {
                     publish("Reading direction: " + (isJapaneseManga ? "Japanese (right to left)" : "Western (left to right)"));
@@ -1157,6 +1188,9 @@ public class MangaPagesSplitterUI extends JFrame implements ProcessingListener {
 
             @Override
             protected void done() {
+                if (isCancelled()) {
+                    return; // engineStopped() reports once the engine has actually stopped
+                }
                 try {
                     BatchResult result = get();
                     appendToLog("------------------------------");
@@ -1168,15 +1202,13 @@ public class MangaPagesSplitterUI extends JFrame implements ProcessingListener {
                         appendToLog("  warning: " + warning);
                     }
                 } catch (CancellationException e) {
-                    appendToLog("Processing cancelled. No input files were deleted.");
+                    // handled by engineStopped()
                 } catch (InterruptedException e) {
                     appendToLog("Processing was interrupted!");
                 } catch (ExecutionException e) {
                     appendToLog("------------------------------");
                     appendToLog("Processing FAILED: " + e.getCause().getMessage());
                     e.getCause().printStackTrace();
-                } finally {
-                    resetUIAfterProcessing();
                 }
             }
         };
@@ -1389,6 +1421,20 @@ public class MangaPagesSplitterUI extends JFrame implements ProcessingListener {
     
     private void resetUIAfterProcessing() {
         setProcessingState(false);
+    }
+
+    /** Called on the EDT once the engine thread has returned, whether it finished or was cancelled. */
+    private void engineStopped(boolean cancelled) {
+        if (cancelled) {
+            appendToLog("------------------------------");
+            appendToLog("Processing cancelled. No input files were deleted.");
+        }
+        resetUIAfterProcessing();
+    }
+
+    /** True while a batch is running (or still stopping after a cancel request). */
+    private boolean isProcessing() {
+        return startButton != null && !startButton.isEnabled() && currentWorker != null;
     }
     
     private String getSplitModeName(int mode) {

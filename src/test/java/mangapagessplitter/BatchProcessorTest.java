@@ -149,6 +149,27 @@ class BatchProcessorTest {
     }
 
     @Test
+    void cancellationDuringPageProcessingDeletesNothingAndLeavesNoOutput() throws IOException {
+        Path book = folderWithPages("book", 3);
+        Path zip = zipWithPages("other.zip", "001.png");
+        BatchOptions o = options();
+        o.deleteOriginals = true;
+        FakeListener listener = new FakeListener();
+        listener.cancelWhenLogContains("Page 001.png");   // first page of the first volume
+
+        BatchResult r = BatchProcessor.run(o, listener);
+
+        assertTrue(r.cancelled);
+        assertTrue(r.failures.isEmpty(), "a cancelled job is not an error: " + r.failures);
+        assertTrue(r.outputs.isEmpty());
+        assertTrue(Files.isRegularFile(book.resolve("003.png")), "folder kept");
+        assertTrue(Files.isRegularFile(zip), "archive kept");
+        assertFalse(Files.exists(root.resolve("book.cbz")));
+        assertFalse(Files.exists(root.resolve("other.cbz")));
+        assertNoLeftovers();
+    }
+
+    @Test
     void existingFolderNamedLikeAnArchiveIsNotOverwrittenOrDeleted() throws IOException {
         Path book = folderWithPages("book", 1);
         Files.write(book.resolve("notes.txt"), "keep me".getBytes(StandardCharsets.UTF_8));

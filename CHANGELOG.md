@@ -38,6 +38,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `(2)` suffix instead of overwriting each other. The final log line now says
   whether the run completed, was cancelled, or finished with errors, and lists
   the failed items.
+- **Cancel now really stops the run before the UI is re-enabled.** The Start
+  button stays disabled until the engine has returned from its current file
+  operation, ZIP extraction and creation stop at the next entry, and an
+  external 7-Zip/WinRAR process started by the app is killed instead of being
+  left running. A cancelled volume is reported as cancelled, not as an error.
+  Closing the window while a run is in progress now asks for confirmation.
 - RAR/CBR archives that neither junrar nor an external tool could extract are
   now reported as failures instead of being silently treated as empty.
 - When no WinRAR/rar is installed, CBR/RAR output is now written as CBZ/ZIP

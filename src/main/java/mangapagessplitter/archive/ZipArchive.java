@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
@@ -18,12 +19,20 @@ public final class ZipArchive {
 
     /** Extracts every entry of {@code zipFile} under {@code destDir}, rejecting entries that escape it. */
     public static void extract(File zipFile, File destDir) throws IOException {
+        extract(zipFile, destDir, () -> false);
+    }
+
+    /** As {@link #extract(File, File)}; stops with an {@link IOException} once {@code cancelled} turns true. */
+    public static void extract(File zipFile, File destDir, BooleanSupplier cancelled) throws IOException {
         try (ZipInputStream zis = new ZipInputStream(new FileInputStream(zipFile))) {
             ZipEntry entry;
             byte[] buffer = new byte[1024];
 
             String destRoot = destDir.getCanonicalPath() + File.separator;
             while ((entry = zis.getNextEntry()) != null) {
+                if (cancelled.getAsBoolean()) {
+                    throw new IOException("cancelled while extracting " + zipFile.getName());
+                }
                 File outputFile = new File(destDir, entry.getName());
 
                 // Validate every entry, directories included, before any filesystem write
@@ -52,12 +61,20 @@ public final class ZipArchive {
 
     /** Writes {@code imageFiles} into a new ZIP at {@code outputFile}, using bare file names as entry names. */
     public static void create(List<Path> imageFiles, File outputFile) throws IOException {
+        create(imageFiles, outputFile, () -> false);
+    }
+
+    /** As {@link #create(List, File)}; stops with an {@link IOException} once {@code cancelled} turns true. */
+    public static void create(List<Path> imageFiles, File outputFile, BooleanSupplier cancelled) throws IOException {
         System.out.println("Creating ZIP/CBZ: " + outputFile);
 
         try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(outputFile))) {
             byte[] buffer = new byte[1024];
 
             for (Path file : imageFiles) {
+                if (cancelled.getAsBoolean()) {
+                    throw new IOException("cancelled while writing " + outputFile.getName());
+                }
                 ZipEntry entry = new ZipEntry(file.getFileName().toString());
                 zos.putNextEntry(entry);
 

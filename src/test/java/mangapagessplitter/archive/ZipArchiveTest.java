@@ -82,6 +82,34 @@ class ZipArchiveTest {
     }
 
     @Test
+    void createStopsWhenCancelled() throws IOException {
+        Path a = Files.write(tmp.resolve("001.png"), "a".getBytes(StandardCharsets.UTF_8));
+        Path b = Files.write(tmp.resolve("002.png"), "b".getBytes(StandardCharsets.UTF_8));
+        Path zip = tmp.resolve("out.cbz");
+        int[] calls = {0};
+        // not cancelled for the first entry, cancelled before the second
+        assertThrows(IOException.class,
+                () -> ZipArchive.create(Arrays.asList(a, b), zip.toFile(), () -> calls[0]++ > 0));
+    }
+
+    @Test
+    void extractStopsWhenCancelled() throws IOException {
+        Path zip = tmp.resolve("two.zip");
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(zip))) {
+            for (String n : new String[]{"001.png", "002.png"}) {
+                zos.putNextEntry(new ZipEntry(n));
+                zos.write("x".getBytes(StandardCharsets.UTF_8));
+                zos.closeEntry();
+            }
+        }
+        Path dest = tmp.resolve("dest");
+        Files.createDirectories(dest);
+        int[] calls = {0};
+        assertThrows(IOException.class, () -> ZipArchive.extract(zip.toFile(), dest.toFile(), () -> calls[0]++ > 0));
+        assertFalse(Files.exists(dest.resolve("002.png")), "second entry never written");
+    }
+
+    @Test
     void extractCreatesNestedDirectoriesForNestedEntries() throws IOException {
         Path zip = tmp.resolve("nested.zip");
         try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(zip))) {

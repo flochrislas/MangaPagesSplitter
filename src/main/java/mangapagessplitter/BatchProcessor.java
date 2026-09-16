@@ -141,6 +141,10 @@ public class BatchProcessor {
                         result.skipped++;
                     }
                 } catch (IOException e) {
+                    if (isCancelled()) {
+                        result.cancelled = true;
+                        break;
+                    }
                     failed.add(job);
                     String msg = "Error processing folder " + job.displayName + ": " + e.getMessage();
                     logMessage(msg);
@@ -202,13 +206,16 @@ public class BatchProcessor {
                 Files.createDirectories(extractDir);
                 String lower = fileName.toLowerCase(Locale.ROOT);
                 if (lower.endsWith(".rar") || lower.endsWith(".cbr")) {
-                    RarArchive.extract(archivePath, extractDir, BatchProcessor::logMessage);
+                    RarArchive.extract(archivePath, extractDir, BatchProcessor::logMessage, BatchProcessor::isCancelled);
                 } else {
-                    ZipArchive.extract(archivePath.toFile(), extractDir.toFile());
+                    ZipArchive.extract(archivePath.toFile(), extractDir.toFile(), BatchProcessor::isCancelled);
                     logMessage("Extracted: " + fileName);
                 }
                 ea.ok = true;
             } catch (IOException e) {
+                if (isCancelled()) {
+                    break;
+                }
                 String msg = "Error extracting archive " + fileName + ": " + e.getMessage();
                 logMessage(msg);
                 result.failures.add(msg);
@@ -603,12 +610,12 @@ public class BatchProcessor {
         switch (format) {
             case "cbz":
             case "zip":
-                ZipArchive.create(processedFiles, staged.toFile());
+                ZipArchive.create(processedFiles, staged.toFile(), BatchProcessor::isCancelled);
                 verifyZip(staged, processedFiles.size());
                 break;
             case "cbr":
             case "rar":
-                RarArchive.create(processedFiles, staged.toFile(), BatchProcessor::logMessage);
+                RarArchive.create(processedFiles, staged.toFile(), BatchProcessor::logMessage, BatchProcessor::isCancelled);
                 if (!Files.isRegularFile(staged) || Files.size(staged) == 0) {
                     throw new IOException("archive was not written");
                 }
@@ -823,7 +830,7 @@ public class BatchProcessor {
 
     // ------------------------------------------------------------------ helpers
 
-    private static boolean isCancelled() {
+    static boolean isCancelled() {
         return Thread.currentThread().isInterrupted() || (ui != null && ui.isCancelled());
     }
 

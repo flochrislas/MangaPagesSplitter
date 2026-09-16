@@ -6,6 +6,8 @@ import java.io.InputStream;
 import java.io.PrintWriter;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 /**
@@ -16,8 +18,14 @@ public final class ExternalTools {
 
     private ExternalTools() {}
 
-    /** Tries 7-Zip then WinRAR at their usual install paths. Returns true on a zero exit code. */
-    public static boolean extractRar(Path archivePath, Path extractDir) {
+    /** Polling interval while waiting for an external process, so cancellation is noticed quickly. */
+    private static final long POLL_MILLIS = 200;
+
+    /**
+     * Tries 7-Zip then WinRAR at their usual install paths. Returns true on a zero exit code.
+     * {@code cancelled} is polled while the tool runs; when it turns true the process is killed.
+     */
+    public static boolean extractRar(Path archivePath, Path extractDir, BooleanSupplier cancelled) {
         System.out.println("Attempting external extraction for: " + archivePath);
 
         // Try 7-Zip first (most common)
@@ -44,11 +52,14 @@ public final class ExternalTools {
                         archivePath.toString(),
                         "-o" + extractDir.toString()
                     );
-                    int exitCode = runProcess(pb);
+                    int exitCode = runProcess(pb, cancelled);
                     if (exitCode == 0) {
                         System.out.println("Successfully extracted with 7-Zip");
                         return true;
                     }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return false;
                 } catch (Exception e) {
                     System.err.println("7-Zip extraction failed: " + e.getMessage());
                 }
@@ -63,11 +74,14 @@ public final class ExternalTools {
                     ProcessBuilder pb = new ProcessBuilder(
                         path, "x", archivePath.toString(), extractDir.toString()
                     );
-                    int exitCode = runProcess(pb);
+                    int exitCode = runProcess(pb, cancelled);
                     if (exitCode == 0) {
                         System.out.println("Successfully extracted with WinRAR");
                         return true;
                     }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return false;
                 } catch (Exception e) {
                     System.err.println("WinRAR extraction failed: " + e.getMessage());
                 }
@@ -94,8 +108,12 @@ public final class ExternalTools {
         return null;
     }
 
-    /** Creates a RAR with WinRAR / rar. Returns true on a zero exit code, false if no tool exists or it failed. */
-    public static boolean createRar(List<Path> imageFiles, File outputFile, Consumer<String> log) {
+    /**
+     * Creates a RAR with WinRAR / rar. Returns true on a zero exit code, false if no tool
+     * exists or it failed. The process is killed when {@code cancelled} turns true.
+     */
+    public static boolean createRar(List<Path> imageFiles, File outputFile, Consumer<String> log,
+                                    BooleanSupplier cancelled) {
         String winRarPath = findRarCreator();
         if (winRarPath != null) {
             {
@@ -114,17 +132,22 @@ public final class ExternalTools {
                         winRarPath, "a", "-ep", outputFile.getAbsolutePath(), "@" + tempListFile.getAbsolutePath()
                     );
 
-                    int exitCode = runProcess(pb);
-                    
-                    // Clean up temp file
-                    tempListFile.delete();
-                    
+                    int exitCode;
+                    try {
+                        exitCode = runProcess(pb, cancelled);
+                    } finally {
+                        tempListFile.delete();
+                    }
+
                     if (exitCode == 0) {
                         log.accept("Successfully created RAR file with " + new File(winRarPath).getName());
                         return true;
                     } else {
                         log.accept("Failed to create RAR file - exit code: " + exitCode);
                     }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return false;
                 } catch (Exception e) {
                     log.accept("Error creating RAR file: " + e.getMessage());
                 }
@@ -134,14 +157,37 @@ public final class ExternalTools {
         return false;
     }
 
-    /** Runs the process, drains its merged output, and returns the exit code. */
-    static int runProcess(ProcessBuilder pb) throws IOException, InterruptedException {
+    /**
+     * Runs the process and returns its exit code. Its merged output is drained on a
+     * daemon thread so the tool cannot block on a full pipe. While waiting, {@code cancelled}
+     * is polled every {@link #POLL_MILLIS}; when it turns true (or this thread is
+     * interrupted) the child is killed and an {@link IOException} is thrown.
+     */
+    static int runProcess(ProcessBuilder pb, BooleanSupplier cancelled) throws IOException, InterruptedException {
         pb.redirectErrorStream(true);
         Process process = pb.start();
-        try (InputStream is = process.getInputStream()) {
-            byte[] buf = new byte[1024];
-            while (is.read(buf) != -1) {}
+        Thread drainer = new Thread(() -> {
+            try (InputStream is = process.getInputStream()) {
+                byte[] buf = new byte[4096];
+                while (is.read(buf) != -1) { /* discard */ }
+            } catch (IOException ignored) {
+                // stream closed because the process died: nothing to do
+            }
+        }, "external-tool-output");
+        drainer.setDaemon(true);
+        drainer.start();
+        try {
+            while (!process.waitFor(POLL_MILLIS, TimeUnit.MILLISECONDS)) {
+                if (cancelled.getAsBoolean()) {
+                    process.destroyForcibly();
+                    process.waitFor();
+                    throw new IOException("cancelled: external tool was stopped");
+                }
+            }
+            return process.exitValue();
+        } catch (InterruptedException e) {
+            process.destroyForcibly();
+            throw e;
         }
-        return process.waitFor();
     }
 }
