@@ -20,6 +20,9 @@ public final class BatchResult {
     /** Non-fatal problems: a page copied unchanged, a format substituted, a leftover not removed. */
     public final List<String> warnings = new ArrayList<>();
 
+    /** Source folders and archives that were actually deleted (only ever after their output was published). */
+    public final List<Path> deletedInputs = new ArrayList<>();
+
     /** Jobs that produced nothing because their folder held no images. */
     public int skipped = 0;
 
@@ -32,7 +35,10 @@ public final class BatchResult {
 
     public String summary() {
         if (cancelled) {
-            return "Processing cancelled. No input files were deleted.";
+            String deleted = deletedInputs.isEmpty()
+                    ? "No input files were deleted."
+                    : deletedInputs.size() + " input(s) were deleted before cancelling; the rest were kept.";
+            return "Processing cancelled. " + outputs.size() + " output(s) created. " + deleted;
         }
         String warn = warnings.isEmpty() ? "" : " " + warnings.size() + " warning(s).";
         if (failures.isEmpty()) {

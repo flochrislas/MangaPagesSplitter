@@ -295,6 +295,83 @@ class BatchProcessorTest {
         assertNoLeftovers();
     }
 
+    // ---- publication failure and late cancellation --------------------------------
+
+    @Test
+    void failedFinalMoveRestoresTheOriginalFolder() throws IOException {
+        Path book = folderWithPages("book", 2);
+        byte[] page = Files.readAllBytes(book.resolve("001.png"));
+        BatchOptions o = options();
+        o.outputFormat = "folder";       // output path == source folder
+        o.deleteOriginals = true;
+        BatchProcessor.beforePublishHook = () -> { throw new IOException("disk full (injected)"); };
+        try {
+            BatchResult r = BatchProcessor.run(o, new FakeListener());
+
+            assertFalse(r.isCleanSuccess());
+            assertTrue(r.outputs.isEmpty());
+            assertArrayEquals(page, Files.readAllBytes(book.resolve("001.png")), "original restored in place");
+            assertTrue(Files.isRegularFile(book.resolve("002.png")));
+            assertFalse(Files.exists(root.resolve("book_original")), "no stray backup left behind");
+            assertNoLeftovers();
+        } finally {
+            BatchProcessor.beforePublishHook = null;
+        }
+    }
+
+    @Test
+    void failedFinalMoveRestoresTheOriginalArchive() throws IOException {
+        Path zip = zipWithPages("book.zip", "001.png");
+        byte[] before = Files.readAllBytes(zip);
+        BatchOptions o = options();
+        o.outputFormat = "zip";          // output path == input path
+        o.deleteOriginals = true;
+        BatchProcessor.beforePublishHook = () -> { throw new IOException("disk full (injected)"); };
+        try {
+            BatchResult r = BatchProcessor.run(o, new FakeListener());
+
+            assertFalse(r.isCleanSuccess());
+            assertArrayEquals(before, Files.readAllBytes(zip), "original archive restored in place");
+            assertFalse(Files.exists(root.resolve("book_original.zip")));
+            assertNoLeftovers();
+        } finally {
+            BatchProcessor.beforePublishHook = null;
+        }
+    }
+
+    @Test
+    void cancellationDuringCleanupStopsDeletingAndIsReported() throws IOException {
+        Path a = folderWithPages("a-book", 1);
+        Path b = folderWithPages("b-book", 1);
+        Path zip = zipWithPages("c-book.zip", "001.png");
+        BatchOptions o = options();
+        o.deleteOriginals = true;
+        FakeListener listener = new FakeListener();
+        listener.cancelWhenLogContains("Cleaning up");
+
+        BatchResult r = BatchProcessor.run(o, listener);
+
+        assertTrue(r.cancelled, "cancel during cleanup must be reported");
+        assertEquals(3, r.outputs.size(), "outputs published before cleanup stay");
+        assertTrue(r.deletedInputs.isEmpty(), "nothing deleted after the cancel: " + r.deletedInputs);
+        assertTrue(Files.isDirectory(a) && Files.isDirectory(b) && Files.isRegularFile(zip));
+        assertTrue(r.summary().contains("cancelled"), r.summary());
+        assertNoLeftovers();
+    }
+
+    @Test
+    void completedDeletionsAreReported() throws IOException {
+        folderWithPages("book", 1);
+        zipWithPages("other.zip", "001.png");
+        BatchOptions o = options();
+        o.deleteOriginals = true;
+
+        BatchResult r = BatchProcessor.run(o, new FakeListener());
+
+        assertTrue(r.isCleanSuccess(), r.summary());
+        assertEquals(2, r.deletedInputs.size(), r.deletedInputs.toString());
+    }
+
     // ---- honest reporting -------------------------------------------------------
 
     @Test

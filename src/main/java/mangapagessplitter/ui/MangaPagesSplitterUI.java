@@ -56,6 +56,8 @@ public class MangaPagesSplitterUI extends JFrame implements ProcessingListener {
     private JButton cancelButton;
     
     private SwingWorker<BatchResult, String> currentWorker = null;
+    /** Result of the last run, also available when the worker was cancelled and get() would throw. */
+    private volatile BatchResult lastResult = null;
     private JCheckBoxMenuItem darkThemeMenuItem;
 
     // Configuration values
@@ -1116,6 +1118,7 @@ public class MangaPagesSplitterUI extends JFrame implements ProcessingListener {
         appendToLog("Starting manga processing...");
         appendToLog("Root folder: " + rootFolder);
         
+        lastResult = null;
         BatchOptions options = new BatchOptions();
         options.rootFolder = rootFolder;
         options.splitMode = splitMode;
@@ -1176,7 +1179,8 @@ public class MangaPagesSplitterUI extends JFrame implements ProcessingListener {
                 publish("File handling: " + (deleteOriginals ? "Delete originals" : "Keep originals"));
                 publish("------------------------------");
 
-                return BatchProcessor.run(options, MangaPagesSplitterUI.this);
+                lastResult = BatchProcessor.run(options, MangaPagesSplitterUI.this);
+                return lastResult;
             }
 
             @Override
@@ -1427,7 +1431,8 @@ public class MangaPagesSplitterUI extends JFrame implements ProcessingListener {
     private void engineStopped(boolean cancelled) {
         if (cancelled) {
             appendToLog("------------------------------");
-            appendToLog("Processing cancelled. No input files were deleted.");
+            appendToLog(lastResult != null ? lastResult.summary()
+                    : "Processing cancelled. No input files were deleted.");
         }
         resetUIAfterProcessing();
     }

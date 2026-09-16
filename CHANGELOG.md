@@ -33,7 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   existing file at the destination is renamed to a unique `_original` backup
   rather than replaced. A source folder or archive is deleted only after every
   output derived from it has been published, and never when the run was
-  cancelled or that item failed. Output names are validated (no `..`, no path
+  cancelled or that item failed. When the output replaces its own source (same
+  name), the source is moved to a backup first and restored if the final move
+  fails, so a disk error can never leave neither original nor output. A cancel
+  request arriving during the final cleanup stops further deletions, and the
+  summary reports exactly which inputs were deleted. Output names are validated (no `..`, no path
   separators, must stay inside the selected folder) and colliding names get a
   `(2)` suffix instead of overwriting each other. The final log line now says
   whether the run completed, was cancelled, or finished with errors, and lists

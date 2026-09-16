@@ -158,7 +158,15 @@ public class BatchProcessor {
             }
 
             updateProgress("Cleaning up...", 90);
+            if (o.deleteOriginals) {
+                logMessage("Cleaning up: deleting inputs whose outputs were published...");
+            }
             cleanUp(o, root, archives, jobs, published, failed, result);
+            if (result.cancelled) {
+                logMessage("Processing cancelled during cleanup. " + result.deletedInputs.size()
+                        + " input(s) had already been deleted; the rest were kept.");
+                return result;
+            }
 
             updateProgress("Complete", 100);
             String outputType = o.outputFormat.equals("folder") ? "folders" : o.outputFormat.toUpperCase() + " files";
@@ -689,58 +697,96 @@ public class BatchProcessor {
 
     /**
      * Moves a fully written staged file to its destination. An existing file there is
-     * replaced only when it is this job's own source archive and originals are to be
-     * deleted; anything else (including another input archive, which has already been
-     * extracted by now) is renamed to a unique backup first. A directory in the way is
-     * never touched.
+     * moved aside first: to a unique "_original" backup that is kept, or, when it is this
+     * job's own source archive and originals are to be deleted, to a temporary backup
+     * that is removed only once the output is in place. If the final move fails the
+     * original is put back, so no combination of outcomes leaves the user with nothing.
+     * A directory in the way is never touched.
      */
     private static void publishFile(Path staged, Path finalPath, InputJob job, boolean deleteOriginals)
             throws IOException {
-        if (Files.exists(finalPath)) {
-            if (Files.isDirectory(finalPath)) {
-                throw new IOException("destination " + finalPath.getFileName() + " is an existing folder");
-            }
-            boolean ownSource = job.archive != null && Files.isSameFile(finalPath, job.archive);
-            if (ownSource && deleteOriginals) {
-                logMessage("Replacing original archive: " + finalPath.getFileName());
-            } else {
-                Path backup = uniqueBackupPath(finalPath);
-                Files.move(finalPath, backup);
-                logMessage("Preserved existing " + finalPath.getFileName() + " as: " + backup.getFileName());
-            }
+        if (Files.exists(finalPath) && Files.isDirectory(finalPath)) {
+            throw new IOException("destination " + finalPath.getFileName() + " is an existing folder");
         }
-        moveIntoPlace(staged, finalPath);
+        boolean ownSource = Files.exists(finalPath) && job.archive != null && Files.isSameFile(finalPath, job.archive);
+        swapIntoPlace(staged, finalPath, ownSource && deleteOriginals, "archive");
     }
 
     /**
-     * Moves a fully staged output directory to its destination. An existing directory
-     * there is deleted only when it is this job's own source folder and originals are
-     * to be deleted; anything else is renamed to a unique backup first.
+     * Moves a fully staged output directory to its destination with the same rules as
+     * {@link #publishFile}: the existing directory is moved aside (kept as a backup, or
+     * removed after success when it is the job's own source and originals are to be
+     * deleted) and restored if the final move fails. A directory that is another input
+     * of this run is refused.
      */
     private static void publishDirectory(Path staged, Path finalPath, InputJob job, boolean deleteOriginals,
                                          Set<Path> inputPaths) throws IOException {
+        boolean ownSource = Files.exists(finalPath) && job.archive == null && Files.isSameFile(finalPath, job.folder);
+        if (Files.exists(finalPath) && !ownSource && Files.isDirectory(finalPath)
+                && inputPaths.contains(finalPath.normalize())) {
+            throw new IOException("destination " + finalPath.getFileName() + " is another input of this run");
+        }
+        swapIntoPlace(staged, finalPath, ownSource && deleteOriginals, "folder");
+    }
+
+    /**
+     * The one place that touches a destination in the root. Order of operations:
+     * existing destination -> backup, staged -> destination, then (only if asked and only
+     * after success) backup -> deleted. Any failure of the second step restores the backup.
+     */
+    private static void swapIntoPlace(Path staged, Path finalPath, boolean discardExisting, String kind)
+            throws IOException {
+        Path backup = null;
         if (Files.exists(finalPath)) {
-            boolean ownSource = job.archive == null && Files.isSameFile(finalPath, job.folder);
-            if (!ownSource && Files.isDirectory(finalPath) && inputPaths.contains(finalPath.normalize())) {
-                throw new IOException("destination " + finalPath.getFileName() + " is another input of this run");
-            }
-            if (ownSource && deleteOriginals) {
-                deleteDirectory(finalPath);
-                logMessage("Deleted original folder (replaced by output): " + finalPath.getFileName());
-            } else {
-                Path backup = uniqueBackupPath(finalPath);
-                Files.move(finalPath, backup);
+            backup = uniqueBackupPath(finalPath);
+            Files.move(finalPath, backup);
+            if (!discardExisting) {
                 logMessage("Preserved existing " + finalPath.getFileName() + " as: " + backup.getFileName());
             }
         }
-        moveIntoPlace(staged, finalPath);
+        try {
+            moveIntoPlace(staged, finalPath);
+        } catch (IOException e) {
+            if (backup != null) {
+                try {
+                    Files.move(backup, finalPath);
+                    logMessage("Publication failed; restored original " + kind + ": " + finalPath.getFileName());
+                } catch (IOException restore) {
+                    logMessage("Publication failed and the original could not be restored; it is kept as: "
+                            + backup.getFileName());
+                }
+            }
+            throw e;
+        }
+        if (backup != null && discardExisting) {
+            deleteDirectoryOrFile(backup);
+            logMessage("Replaced original " + kind + ": " + finalPath.getFileName());
+        }
+    }
+
+    /** Test hook: when set, invoked right before the staged output is moved into the root. */
+    static IOAction beforePublishHook = null;
+
+    interface IOAction {
+        void run() throws IOException;
     }
 
     private static void moveIntoPlace(Path staged, Path finalPath) throws IOException {
+        if (beforePublishHook != null) {
+            beforePublishHook.run();
+        }
         try {
             Files.move(staged, finalPath, StandardCopyOption.ATOMIC_MOVE);
         } catch (AtomicMoveNotSupportedException e) {
             Files.move(staged, finalPath);
+        }
+    }
+
+    private static void deleteDirectoryOrFile(Path p) throws IOException {
+        if (Files.isDirectory(p)) {
+            deleteDirectory(p);
+        } else {
+            Files.deleteIfExists(p);
         }
     }
 
@@ -769,8 +815,13 @@ public class BatchProcessor {
             if (!Files.exists(ea.archive) || result.outputs.stream().anyMatch(out -> samePath(out, ea.archive))) {
                 continue; // already replaced by its own output, or moved aside as a backup
             }
+            if (isCancelled()) {
+                result.cancelled = true;
+                return;
+            }
             try {
                 Files.delete(ea.archive);
+                result.deletedInputs.add(ea.archive);
                 logMessage("Deleted original archive: " + ea.archive.getFileName());
             } catch (IOException e) {
                 logMessage("Error deleting archive: " + ea.archive + " - " + e.getMessage());
@@ -796,8 +847,13 @@ public class BatchProcessor {
             if (holdsOutput || !top.startsWith(root) || top.equals(root)) {
                 continue;
             }
+            if (isCancelled()) {
+                result.cancelled = true;
+                return;
+            }
             try {
                 deleteDirectory(top);
+                result.deletedInputs.add(top);
                 logMessage("Deleted original folder: " + top.getFileName());
             } catch (IOException e) {
                 logMessage("Error deleting folder: " + top + " - " + e.getMessage());
