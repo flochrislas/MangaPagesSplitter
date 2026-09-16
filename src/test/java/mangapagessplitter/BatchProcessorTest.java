@@ -360,6 +360,26 @@ class BatchProcessorTest {
     }
 
     @Test
+    void cancellationRightAfterReplacingAnOriginalReportsTheOutputAndTheDeletion() throws IOException {
+        Path zip = zipWithPages("book.zip", "b.png", "a.png");
+        BatchOptions o = options();
+        o.outputFormat = "zip";          // output replaces its own source
+        o.deleteOriginals = true;
+        FakeListener listener = new FakeListener();
+        listener.cancelWhenLogContains("Replaced original archive");
+
+        BatchResult r = BatchProcessor.run(o, listener);
+
+        assertTrue(r.cancelled);
+        assertEquals(1, r.outputs.size(), "the published output is reported");
+        assertEquals(1, r.deletedInputs.size(), "the replaced original is reported as deleted");
+        assertZipEntries(zip, "001.png", "002.png");
+        assertTrue(r.summary().contains("1 output(s) created") && r.summary().contains("1 input(s) were deleted"),
+                r.summary());
+        assertNoLeftovers();
+    }
+
+    @Test
     void completedDeletionsAreReported() throws IOException {
         folderWithPages("book", 1);
         zipWithPages("other.zip", "001.png");

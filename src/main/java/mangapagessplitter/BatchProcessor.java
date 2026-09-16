@@ -127,15 +127,18 @@ public class BatchProcessor {
                     String outputName = resolveOutputName(job, o, root, reservedNames);
                     logMessage("Processing folder: " + outputName);
                     Path out = processFolderAndCreateOutput(job, root, workspace, outputName, o, inputPaths, result);
+                    if (out != null) {
+                        // Record what really happened before looking at the cancel flag: the
+                        // output is in place (and its source may already be gone).
+                        published.put(job, out);
+                        result.outputs.add(out);
+                        logMessage("Created: " + out.getFileName());
+                    }
                     if (isCancelled()) {
                         result.cancelled = true;
                         break;
                     }
-                    if (out != null) {
-                        published.put(job, out);
-                        result.outputs.add(out);
-                        logMessage("Created: " + out.getFileName());
-                    } else {
+                    if (out == null) {
                         // Nothing produced: give the name back so a later job can use it.
                         reservedNames.remove(outputName.toLowerCase(Locale.ROOT));
                         result.skipped++;
@@ -599,7 +602,7 @@ public class BatchProcessor {
             for (Path file : processedFiles) {
                 Files.copy(file, staged.resolve(file.getFileName()), StandardCopyOption.REPLACE_EXISTING);
             }
-            publishDirectory(staged, finalPath, job, o.deleteOriginals, inputPaths);
+            publishDirectory(staged, finalPath, job, o.deleteOriginals, inputPaths, result);
             logMessage("Created output folder: " + finalPath.getFileName());
             return finalPath;
         }
@@ -631,7 +634,7 @@ public class BatchProcessor {
             default:
                 throw new IOException("Unknown output format: " + format);
         }
-        publishFile(staged, finalPath, job, o.deleteOriginals);
+        publishFile(staged, finalPath, job, o.deleteOriginals, result);
         return finalPath;
 
         } finally {
@@ -703,13 +706,13 @@ public class BatchProcessor {
      * original is put back, so no combination of outcomes leaves the user with nothing.
      * A directory in the way is never touched.
      */
-    private static void publishFile(Path staged, Path finalPath, InputJob job, boolean deleteOriginals)
-            throws IOException {
+    private static void publishFile(Path staged, Path finalPath, InputJob job, boolean deleteOriginals,
+                                    BatchResult result) throws IOException {
         if (Files.exists(finalPath) && Files.isDirectory(finalPath)) {
             throw new IOException("destination " + finalPath.getFileName() + " is an existing folder");
         }
         boolean ownSource = Files.exists(finalPath) && job.archive != null && Files.isSameFile(finalPath, job.archive);
-        swapIntoPlace(staged, finalPath, ownSource && deleteOriginals, "archive");
+        swapIntoPlace(staged, finalPath, ownSource && deleteOriginals, "archive", result);
     }
 
     /**
@@ -720,13 +723,13 @@ public class BatchProcessor {
      * of this run is refused.
      */
     private static void publishDirectory(Path staged, Path finalPath, InputJob job, boolean deleteOriginals,
-                                         Set<Path> inputPaths) throws IOException {
+                                         Set<Path> inputPaths, BatchResult result) throws IOException {
         boolean ownSource = Files.exists(finalPath) && job.archive == null && Files.isSameFile(finalPath, job.folder);
         if (Files.exists(finalPath) && !ownSource && Files.isDirectory(finalPath)
                 && inputPaths.contains(finalPath.normalize())) {
             throw new IOException("destination " + finalPath.getFileName() + " is another input of this run");
         }
-        swapIntoPlace(staged, finalPath, ownSource && deleteOriginals, "folder");
+        swapIntoPlace(staged, finalPath, ownSource && deleteOriginals, "folder", result);
     }
 
     /**
@@ -734,8 +737,8 @@ public class BatchProcessor {
      * existing destination -> backup, staged -> destination, then (only if asked and only
      * after success) backup -> deleted. Any failure of the second step restores the backup.
      */
-    private static void swapIntoPlace(Path staged, Path finalPath, boolean discardExisting, String kind)
-            throws IOException {
+    private static void swapIntoPlace(Path staged, Path finalPath, boolean discardExisting, String kind,
+                                      BatchResult result) throws IOException {
         Path backup = null;
         if (Files.exists(finalPath)) {
             backup = uniqueBackupPath(finalPath);
@@ -760,6 +763,7 @@ public class BatchProcessor {
         }
         if (backup != null && discardExisting) {
             deleteDirectoryOrFile(backup);
+            result.deletedInputs.add(finalPath);   // the original that lived at this path is gone
             logMessage("Replaced original " + kind + ": " + finalPath.getFileName());
         }
     }
