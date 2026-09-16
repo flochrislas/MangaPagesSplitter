@@ -33,8 +33,8 @@ apply to the chosen mode.
 ### Auto-split Exceptions
 
 **Skip splitting certain images**, with **Skip from start** and **Skip from
-end** counters. Images are sorted by file name; the first N and last N images of
-each folder are never split. This is meant for covers, colour inserts, tables of
+end** counters. Images are sorted in natural order (`2.png` before `10.png`);
+the first N and last N images of each folder are never split. This is meant for covers, colour inserts, tables of
 contents and back matter, which are often landscape but are not spreads. The
 log shows `Skipping split for exception image: <name>` for each one.
 
@@ -47,7 +47,10 @@ exceptions are enabled, because only exception images can remain wide.
 
 ## Detection rule in auto mode
 
-Images in a folder are processed in sorted file-name order. For each image:
+Images in a folder are processed in natural name order: runs of digits compare
+by value and letters case-insensitively, so `2.png` comes before `10.png`. In
+flatten mode only the images directly inside the folder belong to it; otherwise
+the whole sub-tree is one volume. For each image:
 
 1. Cropping runs first (smart autocrop or manual offsets), so the decision is
    made on the cropped dimensions.
@@ -93,20 +96,30 @@ When smart autocrop is on, each half is run through the autocrop a second time
 (without spine detection) to trim the half-gutter whitespace left on its inner
 edge and any margin that only became an outer border after the split.
 
-## Ordering and naming of the halves
+## Ordering and naming of output pages
 
-Each split produces two files named after the source with a suffix:
+Output pages are renumbered in reading order with a zero-padded counter, at
+least three digits wide (four from 1000 pages on). A split spread takes two
+consecutive numbers, unsplit pages take one, and the original extension is kept
+in lower case:
 
 ```
-0028.jpg  ->  0028_1.jpg   (first page in reading order)
-              0028_2.jpg   (second page)
+page05.jpg (wide)  ->  005.jpg   (first page in reading order)
+                       006.jpg   (second page)
+page06.jpg         ->  007.jpg
 ```
 
-For Japanese reading direction `_1` is the **right** half; for Western it is
-the **left** half. Because output archives are read in file-name order by comic
-readers, this suffix scheme keeps pages in sequence between unsplit and split
-images. The original extension is kept and the image is re-encoded with Java's
-`ImageIO` writer for that format.
+For Japanese reading direction the first number is the **right** half; for
+Western it is the **left** half. Because comic readers sort by file name, the
+counter guarantees the pages appear in the order they were processed, and it
+also rules out collisions between sub-folders that both contain a `001.png` or
+with a source that already has a `page05_1.jpg`. Original names are not kept
+inside the output; the processing log prints the mapping for the first three
+pages of each volume (`Page page05.jpg -> 005.jpg, 006.jpg`).
+
+Pages that are not transformed are copied byte for byte under their new name.
+Transformed pages are re-encoded with Java's `ImageIO` writer for the original
+format.
 
 ## Interaction with other steps
 

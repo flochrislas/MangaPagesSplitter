@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -383,12 +384,16 @@ public class BatchProcessor {
         List<Path> imagePaths;
         List<Path> processedFiles = new ArrayList<>();
 
-        // Find all image files (sorted for deterministic skip-from-start/end behavior)
-        try (Stream<Path> walk = Files.walk(folder)) {
-            imagePaths = walk
+        // Find the image files. In flatten mode every image-bearing directory is its own
+        // volume, so only direct children count; otherwise the whole tree is one volume.
+        // Natural order (2 before 10) decides reading order and which pages the
+        // skip-from-start/end counters hit.
+        try (Stream<Path> files = o.flattenDirectories ? Files.list(folder) : Files.walk(folder)) {
+            imagePaths = files
                     .filter(Files::isRegularFile)
                     .filter(path -> isImageFile(path.toString()))
-                    .sorted()
+                    .sorted(Comparator.comparing(
+                            (Path path) -> folder.relativize(path).toString(), NaturalOrder.INSTANCE))
                     .collect(Collectors.toList());
         }
 
@@ -399,6 +404,12 @@ public class BatchProcessor {
 
         int totalImages = imagePaths.size();
         logMessage("Found " + totalImages + " images in " + job.displayName);
+
+        // Output pages are renumbered in reading order: 001.jpg, 002.jpg, ... (a split
+        // spread takes two consecutive numbers). This guarantees the reader's order and
+        // rules out name collisions between sub-folders or with pre-existing "_1" names.
+        int pageWidth = Math.max(3, String.valueOf(totalImages * 2L).length());
+        int[] pageSeq = {0};
 
         // Calculate which images to actually process with exceptions
         int firstImageToProcess = Math.min(skipImagesFromStart, totalImages);
@@ -533,33 +544,34 @@ public class BatchProcessor {
                                 }
                             }
                         }
-                        String baseName = imagePath.getFileName().toString();
-                        baseName = baseName.substring(0, baseName.lastIndexOf('.'));
-                        String ext = imagePath.toString().substring(imagePath.toString().lastIndexOf('.') + 1);
-
-                        Path firstPage = tempDir.resolve(baseName + "_1." + ext);
-                        Path secondPage = tempDir.resolve(baseName + "_2." + ext);
+                        String ext = extensionOf(imagePath);
+                        Path firstPage = tempDir.resolve(pageName(++pageSeq[0], pageWidth, ext));
+                        Path secondPage = tempDir.resolve(pageName(++pageSeq[0], pageWidth, ext));
 
                         writeImage(halves[0], ext, firstPage);
                         writeImage(halves[1], ext, secondPage);
 
                         processedFiles.add(firstPage);
                         processedFiles.add(secondPage);
+                        logPageNames(i, imagePath, firstPage, secondPage);
                     } else if (modified) {
-                        String ext = imagePath.toString().substring(imagePath.toString().lastIndexOf('.') + 1);
-                        Path tempFile = tempDir.resolve(imagePath.getFileName());
+                        String ext = extensionOf(imagePath);
+                        Path tempFile = tempDir.resolve(pageName(++pageSeq[0], pageWidth, ext));
                         writeImage(img, ext, tempFile);
                         processedFiles.add(tempFile);
+                        logPageNames(i, imagePath, tempFile);
                     } else {
-                        processedFiles.add(imagePath);
+                        Path copy = copyUnchanged(imagePath, tempDir, ++pageSeq[0], pageWidth);
+                        processedFiles.add(copy);
+                        logPageNames(i, imagePath, copy);
                     }
                 } else {
                     warn(result, "Unsupported image format, page copied unchanged: " + imagePath.getFileName());
-                    processedFiles.add(imagePath);
+                    processedFiles.add(copyUnchanged(imagePath, tempDir, ++pageSeq[0], pageWidth));
                 }
             } catch (IOException e) {
                 warn(result, "Page copied unchanged (" + e.getMessage() + "): " + imagePath.getFileName());
-                processedFiles.add(imagePath);
+                processedFiles.add(copyUnchanged(imagePath, tempDir, ++pageSeq[0], pageWidth));
             }
         }
         if (isCancelled() || processedFiles.isEmpty()) {
@@ -613,6 +625,36 @@ public class BatchProcessor {
             } catch (IOException e) {
                 logMessage("Warning: failed to clean up temp directory: " + e.getMessage());
             }
+        }
+    }
+
+    private static String extensionOf(Path image) {
+        String name = image.getFileName().toString();
+        return name.substring(name.lastIndexOf('.') + 1);
+    }
+
+    /** Zero-padded sequence name: {@code 007.jpg}. The extension is lower-cased for consistency. */
+    private static String pageName(int seq, int width, String ext) {
+        return String.format("%0" + width + "d.%s", seq, ext.toLowerCase(Locale.ROOT));
+    }
+
+    private static Path copyUnchanged(Path image, Path tempDir, int seq, int width) throws IOException {
+        Path target = tempDir.resolve(pageName(seq, width, extensionOf(image)));
+        Files.copy(image, target);
+        return target;
+    }
+
+    /** Logs the original-to-output name mapping for the first few pages of a volume. */
+    private static void logPageNames(int index, Path original, Path... outputs) {
+        if (index < 3) {
+            StringBuilder sb = new StringBuilder("Page ").append(original.getFileName()).append(" -> ");
+            for (int k = 0; k < outputs.length; k++) {
+                if (k > 0) sb.append(", ");
+                sb.append(outputs[k].getFileName());
+            }
+            logMessage(sb.toString());
+        } else if (index == 3) {
+            logMessage("Renumbering remaining pages...");
         }
     }
 

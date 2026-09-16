@@ -193,23 +193,32 @@ class BatchProcessorTest {
     }
 
     @Test
-    void failedArchiveCreationLeavesOriginalArchiveIntact() throws IOException {
-        // Two pages with the same file name in different sub-folders: the flat ZIP
-        // writer throws a duplicate-entry error half way through.
-        Path zip = root.resolve("book.zip");
-        Map<String, byte[]> entries = new LinkedHashMap<>();
-        entries.put("a/001.png", pngBytes());
-        entries.put("b/001.png", pngBytes());
-        writeZip(zip, entries);
-        byte[] before = Files.readAllBytes(zip);
+    void sameNameZipOutputReplacesOwnSourceOnlyAfterVerification() throws IOException {
+        Path zip = zipWithPages("book.zip", "b.png", "a.png");
         BatchOptions o = options();
         o.outputFormat = "zip";          // output path == input path
         o.deleteOriginals = true;
 
         BatchResult r = BatchProcessor.run(o, new FakeListener());
 
-        assertFalse(r.isCleanSuccess());
-        assertArrayEquals(before, Files.readAllBytes(zip), "original archive never truncated");
+        assertTrue(r.isCleanSuccess(), r.summary());
+        assertZipEntries(zip, "001.png", "002.png");   // the verified output now sits at the input path
+        assertFalse(Files.exists(root.resolve("book_original.zip")));
+        assertNoLeftovers();
+    }
+
+    @Test
+    void sameNameZipOutputKeepsOwnSourceAsBackupWhenKeepingOriginals() throws IOException {
+        Path zip = zipWithPages("book.zip", "b.png", "a.png");
+        byte[] before = Files.readAllBytes(zip);
+        BatchOptions o = options();
+        o.outputFormat = "zip";
+
+        BatchResult r = BatchProcessor.run(o, new FakeListener());
+
+        assertTrue(r.isCleanSuccess(), r.summary());
+        assertZipEntries(zip, "001.png", "002.png");
+        assertArrayEquals(before, Files.readAllBytes(root.resolve("book_original.zip")), "original bytes preserved");
         assertNoLeftovers();
     }
 
@@ -294,11 +303,94 @@ class BatchProcessorTest {
 
         assertTrue(r.isCleanSuccess(), r.summary());
         assertEquals(1, r.warnings.size(), r.warnings.toString());
-        assertZipEntries(root.resolve("book.cbz"), "001_1.png", "001_2.png", "002.png");
+        assertZipEntries(root.resolve("book.cbz"), "001.png", "002.png", "003.png");
         assertNoLeftovers();
     }
 
+    // ---- page ordering and naming -----------------------------------------------
+
+    @Test
+    void pagesAreRenumberedInNaturalOrder() throws IOException {
+        Path book = Files.createDirectories(root.resolve("book"));
+        Files.write(book.resolve("1.png"), pngBytes(0xff0000));
+        Files.write(book.resolve("2.png"), pngBytes(0x00ff00));
+        Files.write(book.resolve("10.png"), pngBytes(0x0000ff));
+        BatchOptions o = options();
+
+        BatchResult r = BatchProcessor.run(o, new FakeListener());
+
+        assertTrue(r.isCleanSuccess(), r.summary());
+        assertZipEntries(root.resolve("book.cbz"), "001.png", "002.png", "003.png");
+        assertEquals(0xff0000, colourOfEntry(root.resolve("book.cbz"), "001.png"));
+        assertEquals(0x00ff00, colourOfEntry(root.resolve("book.cbz"), "002.png"));
+        assertEquals(0x0000ff, colourOfEntry(root.resolve("book.cbz"), "003.png"), "10.png comes last");
+    }
+
+    @Test
+    void duplicateNamesInSubFoldersNoLongerCollide() throws IOException {
+        Path book = root.resolve("book");
+        Files.createDirectories(book.resolve("ch1"));
+        Files.createDirectories(book.resolve("ch2"));
+        Files.write(book.resolve("ch1").resolve("001.png"), pngBytes(0x111111));
+        Files.write(book.resolve("ch1").resolve("002.png"), pngBytes(0x222222));
+        Files.write(book.resolve("ch2").resolve("001.png"), pngBytes(0x333333));
+        BatchOptions o = options();
+
+        BatchResult r = BatchProcessor.run(o, new FakeListener());
+
+        assertTrue(r.isCleanSuccess(), r.summary());
+        assertZipEntries(root.resolve("book.cbz"), "001.png", "002.png", "003.png");
+        assertEquals(0x333333, colourOfEntry(root.resolve("book.cbz"), "003.png"));
+    }
+
+    @Test
+    void splitSpreadTakesTwoConsecutiveNumbersInReadingOrder() throws IOException {
+        Path book = Files.createDirectories(root.resolve("book"));
+        // wide spread: left half green, right half red
+        BufferedImage spread = new BufferedImage(80, 40, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < 40; y++) for (int x = 0; x < 80; x++) spread.setRGB(x, y, x < 40 ? 0x00ff00 : 0xff0000);
+        ImageIO.write(spread, "png", book.resolve("page05.png").toFile());
+        Files.write(book.resolve("page06.png"), pngBytes(0x0000ff));
+        BatchOptions o = options();
+        o.splitMode = 0;            // auto: only the wide image is split
+        o.isJapaneseManga = true;   // right half first
+
+        BatchResult r = BatchProcessor.run(o, new FakeListener());
+
+        assertTrue(r.isCleanSuccess(), r.summary());
+        assertZipEntries(root.resolve("book.cbz"), "001.png", "002.png", "003.png");
+        assertEquals(0xff0000, colourOfEntry(root.resolve("book.cbz"), "001.png"), "right half first");
+        assertEquals(0x00ff00, colourOfEntry(root.resolve("book.cbz"), "002.png"), "then left half");
+        assertEquals(0x0000ff, colourOfEntry(root.resolve("book.cbz"), "003.png"));
+    }
+
+    @Test
+    void flattenModeProcessesEachFolderOnlyOnce() throws IOException {
+        Path series = Files.createDirectories(root.resolve("series"));
+        Files.write(series.resolve("cover.png"), pngBytes(0x101010));
+        Path chapter = Files.createDirectories(series.resolve("chapter"));
+        Files.write(chapter.resolve("page.png"), pngBytes(0x202020));
+        BatchOptions o = options();
+        o.flattenDirectories = true;
+
+        BatchResult r = BatchProcessor.run(o, new FakeListener());
+
+        assertTrue(r.isCleanSuccess(), r.summary());
+        assertEquals(2, r.outputs.size());
+        assertZipEntries(root.resolve("series.cbz"), "001.png");
+        assertZipEntries(root.resolve("series - chapter.cbz"), "001.png");
+        assertEquals(0x101010, colourOfEntry(root.resolve("series.cbz"), "001.png"), "cover only in series.cbz");
+    }
+
     // ---- helpers --------------------------------------------------------------
+
+    private static int colourOfEntry(Path zip, String entry) throws IOException {
+        try (ZipFile zf = new ZipFile(zip.toFile())) {
+            BufferedImage img = ImageIO.read(zf.getInputStream(zf.getEntry(entry)));
+            return img.getRGB(1, 1) & 0xffffff;
+        }
+    }
+
 
     private BatchOptions options() {
         BatchOptions o = new BatchOptions();
@@ -337,7 +429,12 @@ class BatchProcessorTest {
     }
 
     private static byte[] pngBytes() throws IOException {
+        return pngBytes(0x000000);
+    }
+
+    private static byte[] pngBytes(int rgb) throws IOException {
         BufferedImage img = new BufferedImage(40, 60, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < 60; y++) for (int x = 0; x < 40; x++) img.setRGB(x, y, rgb);
         java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
         ImageIO.write(img, "png", bos);
         return bos.toByteArray();

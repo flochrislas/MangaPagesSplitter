@@ -57,6 +57,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (GHSA-h9h9-2rmf-rvhp).
 
 ### Changed
+- **Output pages are renumbered** in reading order (`001.jpg`, `002.jpg`, ...;
+  a split spread takes two consecutive numbers) instead of keeping the source
+  names with a `_1`/`_2` suffix. Readers now always show pages in processing
+  order, and two sub-folders containing a `001.png` each no longer make the
+  archive fail (CBZ) or silently drop a page (folder output). The log prints
+  the old-to-new mapping for the first pages of each volume.
+- Pages are sorted in **natural order** before processing, so `2.png` comes
+  before `10.png`. This also changes which pages the "skip from start/end"
+  counters hit in folders with unpadded numbers.
+- In flatten mode a folder's volume now contains only the images directly
+  inside it; sub-folders are their own volumes. Previously a chapter's pages
+  were included both in the parent's and in the chapter's output.
 - Smart autocrop and manual four-side cropping are now **mutually
   exclusive**. Enabling smart autocrop disables the manual L/R/T/B
   spinners so leftover manual values can't silently over-crop a batch.
