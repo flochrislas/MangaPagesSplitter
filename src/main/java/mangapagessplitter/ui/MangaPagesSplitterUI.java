@@ -21,7 +21,7 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.prefs.Preferences;
 
-public class MangaPagesSplitterUI extends JFrame implements ProcessingListener {
+public final class MangaPagesSplitterUI extends JFrame implements ProcessingListener {
     // Main configuration objects
     private JTextField rootFolderField;
     private JButton browseButton;

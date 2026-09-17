@@ -448,7 +448,7 @@ public class BatchProcessor {
             // Update progress (for image processing within the current folder)
             if (totalImages > 0) {
                 updateProgress("Processing image " + (i + 1) + "/" + totalImages +
-                               " in " + folder.getFileName(), (int)((i * 100) / totalImages));
+                               " in " + folder.getFileName(), (i * 100) / totalImages);
             }
 
             Path imagePath = imagePaths.get(i);
