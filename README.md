@@ -1,4 +1,6 @@
 # MangaPagesSplitter
+
+[![CI](https://github.com/flochrislas/MangaPagesSplitter/actions/workflows/ci.yml/badge.svg)](https://github.com/flochrislas/MangaPagesSplitter/actions/workflows/ci.yml)
 Transform a manga with 2 pages per image, into a manga with only one page per image.
 Except if you want to keep the double-page spread format, then it is OK, you can simply batch create CBZ files, maybe rotate the images so you can read them in landscape mode etc.
 

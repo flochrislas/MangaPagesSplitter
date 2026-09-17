@@ -25,6 +25,14 @@ java -jar target/MangaPagesSplitter-<version>-jar-with-dependencies.jar
 mvn test
 ```
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push to `main` and on pull requests:
+`mvn verify` (compile with `-Xlint:all`, JUnit suite) on Ubuntu and Windows with
+JDK 17, then a Windows `mvn package` including jpackage as a release rehearsal.
+Tests must stay portable: no POSIX-only binaries (the process tests launch a child
+JVM via `SleepMain`), no assumptions about path separators or case sensitivity.
+
 ## Releasing
 
 Releases are automated by GitHub Actions (`.github/workflows/release.yml`) on

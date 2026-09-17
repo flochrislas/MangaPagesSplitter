@@ -86,6 +86,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exclusive**. Enabling smart autocrop disables the manual L/R/T/B
   spinners so leftover manual values can't silently over-crop a batch.
   Turn smart autocrop off to use fixed manual offsets again.
+- Internal: a CI workflow now compiles and tests every push and pull request
+  on Ubuntu and Windows (JDK 17) and rehearses the Windows jpackage build.
 - Internal: the two monolithic classes are split into the `mangapagessplitter`
   package (`image`, `archive`, `ui` sub-packages, `BatchProcessor` engine,
   `Main` entry point) and the project now has a JUnit 5 test suite

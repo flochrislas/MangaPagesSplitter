@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 17 (Temurin)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      # Compile with -Xlint:all as configured in the pom and run the JUnit suite.
+      # jpackage is skipped here: it is exercised by the release rehearsal below.
+      - name: Compile and test
+        run: mvn -B -ntp verify -Dexec.skip=true
+
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports-${{ matrix.os }}
+          path: target/surefire-reports/
+          if-no-files-found: ignore
+
+  release-rehearsal:
+    name: Windows package (jpackage app-image)
+    runs-on: windows-latest
+    needs: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 17 (Temurin)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      # Same command as the release workflow, so a packaging breakage shows up
+      # on the commit that caused it rather than at tag time.
+      - name: Build fat JAR and Windows app-image
+        run: mvn -B -ntp package -DskipTests
+
+      - name: Smoke-check the app-image
+        shell: pwsh
+        run: |
+          $exe = "target/jpackage/MangaPagesSplitter/MangaPagesSplitter.exe"
+          if (-not (Test-Path $exe)) { Write-Error "launcher not produced: $exe"; exit 1 }
+          $jar = Get-ChildItem "target/jpackage/MangaPagesSplitter/app/*-jar-with-dependencies.jar"
+          if (-not $jar) { Write-Error "fat JAR missing from app-image"; exit 1 }
+          Write-Host "app-image OK: $exe, $($jar.Name)"
