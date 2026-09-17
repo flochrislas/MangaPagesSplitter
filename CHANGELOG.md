@@ -67,6 +67,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (GHSA-h9h9-2rmf-rvhp).
 
 ### Changed
+- **The JAR now requires Java 17 or newer** (previously Java 8). The Windows
+  portable bundle is unaffected: it ships its own Java 17 runtime. The `.bat`
+  and `.sh` launchers check the installed version and explain what to do.
 - **Output pages are renumbered** in reading order (`001.jpg`, `002.jpg`, ...;
   a split spread takes two consecutive numbers) instead of keeping the source
   names with a `_1`/`_2` suffix. Readers now always show pages in processing

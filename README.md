@@ -60,14 +60,14 @@ unzip it anywhere, and double-click `MangaPagesSplitter.exe` inside the
 extracted `MangaPagesSplitter` folder. The bundle ships with its own
 Java runtime, so nothing else needs to be installed.
 #### Batch file
-You can use the batch file `MangaPagesSplitter.bat` from the latest [GitHub Release](https://github.com/flochrislas/MangaPagesSplitter/releases/latest) in order to run the program as a JAR file (you need `MangaPagesSplitter.jar` in the same directory) without typing any command (double click the batch file). You need Java installed on your system for this to work.
+You can use the batch file `MangaPagesSplitter.bat` from the latest [GitHub Release](https://github.com/flochrislas/MangaPagesSplitter/releases/latest) in order to run the program as a JAR file (you need `MangaPagesSplitter.jar` in the same directory) without typing any command (double click the batch file). You need Java 17 or newer installed on your system for this to work.
 #### JAR file
-You can enter the java command to run the JAR file from a console. You need Java installed on your system for this to work.
+You can enter the java command to run the JAR file from a console. You need Java 17 or newer installed on your system for this to work.
 
 ### On Linux
 #### Bash script
-You can use `MangaPagesSplitter.sh` from the latest [GitHub Release](https://github.com/flochrislas/MangaPagesSplitter/releases/latest) in order to run the program as a JAR file (you need `MangaPagesSplitter.jar` in the same directory). You need Java installed on your system for this to work.
+You can use `MangaPagesSplitter.sh` from the latest [GitHub Release](https://github.com/flochrislas/MangaPagesSplitter/releases/latest) in order to run the program as a JAR file (you need `MangaPagesSplitter.jar` in the same directory). You need Java 17 or newer installed on your system for this to work.
 #### JAR file
-You can enter the java command to run the JAR file from a console. You need Java installed on your system for this to work.
+You can enter the java command to run the JAR file from a console. You need Java 17 or newer installed on your system for this to work.
 
 Otherwise, you can simply compile the source code yourself and run it the way you like.

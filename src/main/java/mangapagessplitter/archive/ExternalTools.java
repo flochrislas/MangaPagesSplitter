@@ -2,7 +2,6 @@ package mangapagessplitter.archive;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.PrintWriter;
 import java.nio.file.Path;
 import java.util.List;
@@ -158,24 +157,15 @@ public final class ExternalTools {
     }
 
     /**
-     * Runs the process and returns its exit code. Its merged output is drained on a
-     * daemon thread so the tool cannot block on a full pipe. While waiting, {@code cancelled}
-     * is polled every {@link #POLL_MILLIS}; when it turns true (or this thread is
-     * interrupted) the child is killed and an {@link IOException} is thrown.
+     * Runs the process and returns its exit code. Its output is discarded so the tool
+     * cannot block on a full pipe. While waiting, {@code cancelled} is polled every
+     * {@link #POLL_MILLIS}; when it turns true (or this thread is interrupted) the child
+     * is killed and an {@link IOException} is thrown.
      */
     static int runProcess(ProcessBuilder pb, BooleanSupplier cancelled) throws IOException, InterruptedException {
         pb.redirectErrorStream(true);
+        pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
         Process process = pb.start();
-        Thread drainer = new Thread(() -> {
-            try (InputStream is = process.getInputStream()) {
-                byte[] buf = new byte[4096];
-                while (is.read(buf) != -1) { /* discard */ }
-            } catch (IOException ignored) {
-                // stream closed because the process died: nothing to do
-            }
-        }, "external-tool-output");
-        drainer.setDaemon(true);
-        drainer.start();
         try {
             while (!process.waitFor(POLL_MILLIS, TimeUnit.MILLISECONDS)) {
                 if (cancelled.getAsBoolean()) {

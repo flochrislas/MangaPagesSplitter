@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MangaPagesSplitter is a Java Swing desktop application that batch-processes manga/comic archives by splitting double-page spread images into single pages, with optional cropping, rotation, and re-archiving. The library JAR targets Java 8+; the bundled Windows app-image ships with its own Java 17 runtime.
+MangaPagesSplitter is a Java Swing desktop application that batch-processes manga/comic archives by splitting double-page spread images into single pages, with optional cropping, rotation, and re-archiving. The JAR requires Java 17+; the bundled Windows app-image ships with its own Java 17 runtime.
 
 ## Build Commands
 
 ```bash
 # Compile and package: produces JAR + self-contained Windows app-image
-# (target/jpackage/MangaPagesSplitter/). Build requires JDK 17+ for jpackage.
+# (target/jpackage/MangaPagesSplitter/). Build requires JDK 17+ (compiler release 17, jpackage).
 mvn package
 
 # Package with code signing for the jpackage launcher EXE

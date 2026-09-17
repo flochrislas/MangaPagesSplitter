@@ -31,11 +31,11 @@
       <artifactId>flatlaf</artifactId>
       <version>3.7</version>
     </dependency>
-    <!-- Unit tests (JUnit 5.11 is the last line supporting a Java 8 runtime) -->
+    <!-- Unit tests -->
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
-      <version>5.11.4</version>
+      <version>6.1.3</version>
       <scope>test</scope>
     </dependency>
   </dependencies>
@@ -60,7 +60,7 @@
         <version>3.14.0</version>
         <configuration>
           <!-- Replace source/target with release flag -->
-          <release>8</release>
+          <release>17</release>
           <!-- Add this to suppress specific warnings if needed -->
           <compilerArgs>
             <arg>-Xlint:all,-options,-path</arg>
