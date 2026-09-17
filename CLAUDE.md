@@ -21,7 +21,7 @@ java -jar target/MangaPagesSplitter-<version>-jar-with-dependencies.jar
 ```
 
 ```bash
-# Run the unit tests (JUnit 5, src/test/java)
+# Run the unit tests (JUnit 6, src/test/java)
 mvn test
 ```
 

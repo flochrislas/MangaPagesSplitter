@@ -149,7 +149,7 @@ public class BatchProcessor {
             }
 
             if (result.cancelled) {
-                logMessage("Processing cancelled by user. No input files were deleted.");
+                logMessage(result.summary());
                 return result;
             }
 

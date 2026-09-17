@@ -26,7 +26,10 @@ public final class BatchResult {
     /** Jobs that produced nothing because their folder held no images. */
     public int skipped = 0;
 
-    /** True when the user cancelled before the run finished. Nothing is deleted in that case. */
+    /**
+     * True when the user cancelled before the run finished. No further inputs are deleted
+     * once the flag is seen; {@link #deletedInputs} lists what had already been removed.
+     */
     public boolean cancelled = false;
 
     public boolean isCleanSuccess() {

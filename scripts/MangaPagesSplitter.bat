@@ -26,10 +26,12 @@ SET JAVA_MAJOR=
 FOR /F "tokens=3" %%v IN ('java -version 2^>^&1 ^| findstr /i "version"') DO (
     SET JAVA_VER=%%~v
 )
-FOR /F "tokens=1,2 delims=." %%a IN ("%JAVA_VER%") DO (
+REM Split on "." and "-" so "17-ea" and "1.8.0_471" both yield a numeric major
+FOR /F "tokens=1,2 delims=.-_+" %%a IN ("%JAVA_VER%") DO (
     IF "%%a"=="1" (SET JAVA_MAJOR=%%b) ELSE (SET JAVA_MAJOR=%%a)
 )
-IF "%JAVA_MAJOR%"=="" SET JAVA_MAJOR=0
+REM Reject anything that is not a plain number
+echo %JAVA_MAJOR%| findstr /r "^[0-9][0-9]*$" >nul || SET JAVA_MAJOR=0
 IF %JAVA_MAJOR% LSS 17 (
     echo ERROR: Java 17 or newer is required, but the installed version is %JAVA_VER%.
     echo Install a current Java from https://adoptium.net,

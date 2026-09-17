@@ -20,8 +20,18 @@ if ! command -v java >/dev/null 2>&1; then
     read -p "Press Enter to continue..."
     exit 1
 fi
-JAVA_MAJOR="$(java -version 2>&1 | awk -F'"' '/version/ {split($2, v, "."); print (v[1] == "1") ? v[2] : v[1]}')"
-if [ -z "$JAVA_MAJOR" ] || [ "$JAVA_MAJOR" -lt 17 ]; then
+# Major version: "1.8.0_471" -> 8, "17.0.16" -> 17, "17-ea" -> 17, "25" -> 25.
+JAVA_MAJOR="$(java -version 2>&1 | awk -F'"' '/version/ {print $2; exit}' | sed -E 's/^1\.//; s/^([0-9]+).*$/\1/')"
+case "$JAVA_MAJOR" in
+    ''|*[!0-9]*)
+        echo "ERROR: Could not determine the Java version from:"
+        java -version
+        echo "MangaPagesSplitter needs Java 17 or newer (https://adoptium.net)."
+        read -p "Press Enter to continue..."
+        exit 1
+        ;;
+esac
+if [ "$JAVA_MAJOR" -lt 17 ]; then
     echo "ERROR: Java 17 or newer is required, but the installed version is:"
     java -version
     echo "Install a current Java from https://adoptium.net, or use the portable Windows bundle."

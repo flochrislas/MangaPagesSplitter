@@ -22,6 +22,9 @@ import java.util.concurrent.ExecutionException;
 import java.util.prefs.Preferences;
 
 public final class MangaPagesSplitterUI extends JFrame implements ProcessingListener {
+    /** JFrame is Serializable; the frame is never serialised, this only silences the lint. */
+    private static final long serialVersionUID = 1L;
+
     // Main configuration objects
     private JTextField rootFolderField;
     private JButton browseButton;

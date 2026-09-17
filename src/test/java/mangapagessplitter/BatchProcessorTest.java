@@ -376,6 +376,8 @@ class BatchProcessorTest {
         assertZipEntries(zip, "001.png", "002.png");
         assertTrue(r.summary().contains("1 output(s) created") && r.summary().contains("1 input(s) were deleted"),
                 r.summary());
+        assertTrue(listener.log.stream().noneMatch(m -> m.contains("No input files were deleted")),
+                "log must not contradict the result: " + listener.log);
         assertNoLeftovers();
     }
 
