@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -27,6 +28,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 import java.util.zip.ZipFile;
 
 /**
@@ -42,8 +44,8 @@ import java.util.zip.ZipFile;
  */
 public class BatchProcessor {
 
-    private static final String[] IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"};
-    private static final String[] ARCHIVE_EXTENSIONS = {".rar", ".zip", ".cbr", ".cbz"};
+    private static final List<String> IMAGE_EXTENSIONS = List.of(".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp");
+    private static final List<String> ARCHIVE_EXTENSIONS = List.of(".rar", ".zip", ".cbr", ".cbz");
 
     /** Prefix of the per-run workspace directory created inside the root. */
     static final String WORKSPACE_PREFIX = ".mangapagessplitter-work-";
@@ -62,25 +64,16 @@ public class BatchProcessor {
         }
     }
 
-    /** One folder of images to turn into one output. */
-    private static final class InputJob {
-        final Path folder;
-        /** Name shown to the user and used for the output; "Parent - Leaf" in flatten mode. */
-        final String displayName;
-        /** Last path segment of the source, used for the custom-title number. */
-        final String leafName;
-        /** The original archive this folder was extracted from, or null for a user folder. */
-        final Path archive;
-        /** For user folders: the direct child of the root that contains this folder. */
-        final Path topLevel;
-
-        InputJob(Path folder, String displayName, String leafName, Path archive, Path topLevel) {
-            this.folder = folder;
-            this.displayName = displayName;
-            this.leafName = leafName;
-            this.archive = archive;
-            this.topLevel = topLevel;
-        }
+    /**
+     * One folder of images to turn into one output.
+     *
+     * @param folder      where the images are
+     * @param displayName name shown to the user and used for the output; "Parent - Leaf" in flatten mode
+     * @param leafName    last path segment of the source, used for the custom-title number
+     * @param archive     the original archive this folder was extracted from, or null for a user folder
+     * @param topLevel    for user folders: the direct child of the root that contains this folder
+     */
+    private record InputJob(Path folder, String displayName, String leafName, Path archive, Path topLevel) {
     }
 
     /**
@@ -149,7 +142,7 @@ public class BatchProcessor {
                         break;
                     }
                     failed.add(job);
-                    String msg = "Error processing folder " + job.displayName + ": " + e.getMessage();
+                    String msg = "Error processing folder " + job.displayName() + ": " + e.getMessage();
                     logMessage(msg);
                     result.failures.add(msg);
                 }
@@ -194,7 +187,7 @@ public class BatchProcessor {
             archives = s.filter(Files::isRegularFile)
                         .filter(p -> isArchiveFile(p.toString()))
                         .sorted()
-                        .collect(Collectors.toList());
+                        .toList();
         }
         if (!archives.isEmpty()) {
             logMessage("Found " + archives.size() + " archives to extract");
@@ -247,7 +240,7 @@ public class BatchProcessor {
             topLevel = s.filter(Files::isDirectory)
                         .filter(p -> !isWorkspaceDir(p))
                         .sorted()
-                        .collect(Collectors.toList());
+                        .toList();
         }
         for (Path dir : topLevel) {
             if (flatten) {
@@ -279,7 +272,7 @@ public class BatchProcessor {
             }
         }
 
-        jobs.sort((x, y) -> x.displayName.compareTo(y.displayName));
+        jobs.sort((x, y) -> x.displayName().compareTo(y.displayName()));
         return jobs;
     }
 
@@ -289,7 +282,7 @@ public class BatchProcessor {
             return walk.filter(Files::isDirectory)
                        .filter(BatchProcessor::hasDirectImages)
                        .sorted()
-                       .collect(Collectors.toList());
+                       .toList();
         }
     }
 
@@ -302,12 +295,9 @@ public class BatchProcessor {
     }
 
     private static String joinedName(Path relative) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < relative.getNameCount(); i++) {
-            if (i > 0) sb.append(" - ");
-            sb.append(relative.getName(i));
-        }
-        return sb.toString();
+        return StreamSupport.stream(relative.spliterator(), false)
+                .map(Path::toString)
+                .collect(Collectors.joining(" - "));
     }
 
     private static boolean isWorkspaceDir(Path p) {
@@ -323,14 +313,14 @@ public class BatchProcessor {
      */
     private static String resolveOutputName(InputJob job, BatchOptions o, Path root, Set<String> reserved)
             throws IOException {
-        String name = job.displayName;
+        String name = job.displayName();
         if (o.useCustomTitle && o.customTitle != null && !o.customTitle.trim().isEmpty()) {
-            String number = extractLastNumber(job.leafName);
+            String number = extractLastNumber(job.leafName());
             name = o.customTitle.trim() + (number.isEmpty() ? "" : " " + number);
         }
         name = sanitizeName(name);
         if (name.isEmpty() || name.equals(".") || name.equals("..")) {
-            throw new IOException("Invalid output name \"" + name + "\" for " + job.displayName);
+            throw new IOException("Invalid output name \"" + name + "\" for " + job.displayName());
         }
         Path dest = root.resolve(name).normalize();
         if (!root.equals(dest.getParent()) || isWorkspaceDir(dest)) {
@@ -389,7 +379,7 @@ public class BatchProcessor {
     private static Path processFolderAndCreateOutput(InputJob job, Path rootFolder, Path workspace,
                                                      String outputName, BatchOptions o, Set<Path> inputPaths,
                                                      BatchResult result) throws IOException {
-        Path folder = job.folder;
+        Path folder = job.folder();
         int splitMode = o.splitMode;
         boolean isJapaneseManga = o.isJapaneseManga;
         int skipImagesFromStart = o.skipImagesFromStart;
@@ -412,16 +402,16 @@ public class BatchProcessor {
                     .filter(path -> isImageFile(path.toString()))
                     .sorted(Comparator.comparing(
                             (Path path) -> folder.relativize(path).toString(), NaturalOrder.INSTANCE))
-                    .collect(Collectors.toList());
+                    .toList();
         }
 
         if (imagePaths.isEmpty()) {
-            logMessage("No images found in: " + job.displayName);
+            logMessage("No images found in: " + job.displayName());
             return null;
         }
 
         int totalImages = imagePaths.size();
-        logMessage("Found " + totalImages + " images in " + job.displayName);
+        logMessage("Found " + totalImages + " images in " + job.displayName());
 
         // Output pages are renumbered in reading order: 001.jpg, 002.jpg, ... (a split
         // spread takes two consecutive numbers). This guarantees the reader's order and
@@ -468,20 +458,20 @@ public class BatchProcessor {
                     if (smartAutoCrop) {
                         AutoCropResult autoResult = AutoCrop.apply(img, smartAutoCropSensitivity, true,
                                 BatchProcessor::logMessage);
-                        if (autoResult.applied) {
-                            img = autoResult.image;
+                        if (autoResult.applied()) {
+                            img = autoResult.image();
                             modified = true;
                             if (i < 3) {
                                 logMessage(String.format(
                                     "Smart autocrop: %s (L=%d R=%d T=%d B=%d)",
                                     imagePath.getFileName(),
-                                    autoResult.leftCropped, autoResult.rightCropped,
-                                    autoResult.topCropped, autoResult.bottomCropped));
+                                    autoResult.leftCropped(), autoResult.rightCropped(),
+                                    autoResult.topCropped(), autoResult.bottomCropped()));
                             } else if (i == 3) {
                                 logMessage("Smart autocrop applied to remaining images...");
                             }
                         }
-                        autoSplitX = autoResult.splitX;
+                        autoSplitX = autoResult.splitX();
                     }
 
                     // Apply cropping in memory
@@ -557,8 +547,8 @@ public class BatchProcessor {
                                 AutoCropResult postCrop = AutoCrop.apply(
                                         halves[hi], smartAutoCropSensitivity, false,
                                         BatchProcessor::logMessage);
-                                if (postCrop.applied) {
-                                    halves[hi] = postCrop.image;
+                                if (postCrop.applied()) {
+                                    halves[hi] = postCrop.image();
                                 }
                             }
                         }
@@ -619,20 +609,17 @@ public class BatchProcessor {
         Path staged = workspace.resolve(outputName + extension + ".part");
         logMessage("Creating " + format.toUpperCase() + " archive: " + finalPath.getFileName());
         switch (format) {
-            case "cbz":
-            case "zip":
+            case "cbz", "zip" -> {
                 ZipArchive.create(processedFiles, staged.toFile(), BatchProcessor::isCancelled);
                 verifyZip(staged, processedFiles.size());
-                break;
-            case "cbr":
-            case "rar":
+            }
+            case "cbr", "rar" -> {
                 RarArchive.create(processedFiles, staged.toFile(), BatchProcessor::logMessage, BatchProcessor::isCancelled);
                 if (!Files.isRegularFile(staged) || Files.size(staged) == 0) {
                     throw new IOException("archive was not written");
                 }
-                break;
-            default:
-                throw new IOException("Unknown output format: " + format);
+            }
+            default -> throw new IOException("Unknown output format: " + format);
         }
         publishFile(staged, finalPath, job, o.deleteOriginals, result);
         return finalPath;
@@ -665,12 +652,10 @@ public class BatchProcessor {
     /** Logs the original-to-output name mapping for the first few pages of a volume. */
     private static void logPageNames(int index, Path original, Path... outputs) {
         if (index < 3) {
-            StringBuilder sb = new StringBuilder("Page ").append(original.getFileName()).append(" -> ");
-            for (int k = 0; k < outputs.length; k++) {
-                if (k > 0) sb.append(", ");
-                sb.append(outputs[k].getFileName());
-            }
-            logMessage(sb.toString());
+            String names = Arrays.stream(outputs)
+                    .map(p -> p.getFileName().toString())
+                    .collect(Collectors.joining(", "));
+            logMessage("Page " + original.getFileName() + " -> " + names);
         } else if (index == 3) {
             logMessage("Renumbering remaining pages...");
         }
@@ -711,7 +696,7 @@ public class BatchProcessor {
         if (Files.exists(finalPath) && Files.isDirectory(finalPath)) {
             throw new IOException("destination " + finalPath.getFileName() + " is an existing folder");
         }
-        boolean ownSource = Files.exists(finalPath) && job.archive != null && Files.isSameFile(finalPath, job.archive);
+        boolean ownSource = Files.exists(finalPath) && job.archive() != null && Files.isSameFile(finalPath, job.archive());
         swapIntoPlace(staged, finalPath, ownSource && deleteOriginals, "archive", result);
     }
 
@@ -724,7 +709,7 @@ public class BatchProcessor {
      */
     private static void publishDirectory(Path staged, Path finalPath, InputJob job, boolean deleteOriginals,
                                          Set<Path> inputPaths, BatchResult result) throws IOException {
-        boolean ownSource = Files.exists(finalPath) && job.archive == null && Files.isSameFile(finalPath, job.folder);
+        boolean ownSource = Files.exists(finalPath) && job.archive() == null && Files.isSameFile(finalPath, job.folder());
         if (Files.exists(finalPath) && !ownSource && Files.isDirectory(finalPath)
                 && inputPaths.contains(finalPath.normalize())) {
             throw new IOException("destination " + finalPath.getFileName() + " is another input of this run");
@@ -771,6 +756,7 @@ public class BatchProcessor {
     /** Test hook: when set, invoked right before the staged output is moved into the root. */
     static IOAction beforePublishHook = null;
 
+    @FunctionalInterface
     interface IOAction {
         void run() throws IOException;
     }
@@ -810,7 +796,7 @@ public class BatchProcessor {
         // Original archives.
         for (ExtractedArchive ea : archives) {
             if (!ea.ok) continue;
-            List<InputJob> derived = jobs.stream().filter(j -> ea.archive.equals(j.archive)).collect(Collectors.toList());
+            List<InputJob> derived = jobs.stream().filter(j -> ea.archive.equals(j.archive())).toList();
             boolean allPublished = !derived.isEmpty() && derived.stream().allMatch(published::containsKey);
             if (!allPublished) {
                 logMessage("Keeping original archive (not fully processed): " + ea.archive.getFileName());
@@ -835,10 +821,10 @@ public class BatchProcessor {
         // User folders. In flatten mode a top-level folder goes only when all of its volumes succeeded.
         Set<Path> topLevels = new HashSet<>();
         for (InputJob job : jobs) {
-            if (job.archive == null && job.topLevel != null) topLevels.add(job.topLevel);
+            if (job.archive() == null && job.topLevel() != null) topLevels.add(job.topLevel());
         }
         for (Path top : topLevels) {
-            List<InputJob> under = jobs.stream().filter(j -> top.equals(j.topLevel)).collect(Collectors.toList());
+            List<InputJob> under = jobs.stream().filter(j -> top.equals(j.topLevel())).toList();
             boolean allOk = under.stream().allMatch(published::containsKey);
             if (!allOk) {
                 logMessage("Keeping original folder (not fully processed): " + top.getFileName());
@@ -869,9 +855,9 @@ public class BatchProcessor {
     private static Set<Path> inputPaths(List<InputJob> jobs, List<ExtractedArchive> archives) {
         Set<Path> set = new HashSet<>();
         for (InputJob job : jobs) {
-            if (job.archive == null) {
-                set.add(job.folder.normalize());
-                if (job.topLevel != null) set.add(job.topLevel.normalize());
+            if (job.archive() == null) {
+                set.add(job.folder().normalize());
+                if (job.topLevel() != null) set.add(job.topLevel().normalize());
             }
         }
         for (ExtractedArchive ea : archives) {
@@ -923,22 +909,12 @@ public class BatchProcessor {
 
     private static boolean isImageFile(String filePath) {
         String lowerCase = filePath.toLowerCase(Locale.ROOT);
-        for (String ext : IMAGE_EXTENSIONS) {
-            if (lowerCase.endsWith(ext)) {
-                return true;
-            }
-        }
-        return false;
+        return IMAGE_EXTENSIONS.stream().anyMatch(lowerCase::endsWith);
     }
 
     private static boolean isArchiveFile(String filePath) {
         String lowerCase = filePath.toLowerCase(Locale.ROOT);
-        for (String ext : ARCHIVE_EXTENSIONS) {
-            if (lowerCase.endsWith(ext)) {
-                return true;
-            }
-        }
-        return false;
+        return ARCHIVE_EXTENSIONS.stream().anyMatch(lowerCase::endsWith);
     }
 
     private static String extractLastNumber(String name) {

@@ -730,9 +730,8 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
         if (parent instanceof JPanel) {
             // Find the spinner panels and update their labels
             for (Component comp : parent.getComponents()) {
-                if (comp instanceof JPanel) {
+                if (comp instanceof JPanel spinnerPanel) {
                     // This is one of our spinner panels
-                    JPanel spinnerPanel = (JPanel) comp;
                     for (Component spinnerComponent : spinnerPanel.getComponents()) {
                         if (spinnerComponent instanceof JLabel) {
                             spinnerComponent.setEnabled(enabled);
@@ -945,15 +944,9 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
         // Splitting mode
         text.append("Splitting: ");
         switch (splitMode) {
-            case 0:
-                text.append("Auto-detect double pages\n");
-                break;
-            case 1:
-                text.append("Keep all images original\n");
-                break;
-            case 2:
-                text.append("Split all images in half\n");
-                break;
+            case 0 -> text.append("Auto-detect double pages\n");
+            case 1 -> text.append("Keep all images original\n");
+            case 2 -> text.append("Split all images in half\n");
         }
         
         // Reading direction (if applicable)
@@ -992,21 +985,11 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
         // Output format
         text.append("Output format: ");
         switch (outputFormat) {
-            case "cbz":
-                text.append("CBZ (Comic Book ZIP)");
-                break;
-            case "cbr":
-                text.append("CBR (Comic Book RAR)");
-                break;
-            case "zip":
-                text.append("ZIP archive");
-                break;
-            case "rar":
-                text.append("RAR archive");
-                break;
-            case "folder":
-                text.append("Folder with images (no archive)");
-                break;
+            case "cbz" -> text.append("CBZ (Comic Book ZIP)");
+            case "cbr" -> text.append("CBR (Comic Book RAR)");
+            case "zip" -> text.append("ZIP archive");
+            case "rar" -> text.append("RAR archive");
+            case "folder" -> text.append("Folder with images (no archive)");
         }
         text.append("\n");
         
@@ -1053,21 +1036,11 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
         
         text.append("- Create new ");
         switch (outputFormat) {
-            case "cbz":
-                text.append("CBZ files");
-                break;
-            case "cbr":
-                text.append("CBR files");
-                break;
-            case "zip":
-                text.append("ZIP archives");
-                break;
-            case "rar":
-                text.append("RAR archives");
-                break;
-            case "folder":
-                text.append("folders with processed images");
-                break;
+            case "cbz" -> text.append("CBZ files");
+            case "cbr" -> text.append("CBR files");
+            case "zip" -> text.append("ZIP archives");
+            case "rar" -> text.append("RAR archives");
+            case "folder" -> text.append("folders with processed images");
         }
         text.append(" for each manga\n");
         
@@ -1343,8 +1316,7 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
         
         // Get the parent panel and update its title color
         Container parent = japaneseRadio.getParent();
-        if (parent instanceof JPanel) {
-            JPanel panel = (JPanel) parent;
+        if (parent instanceof JPanel panel) {
             TitledBorder border = (TitledBorder) panel.getBorder();
             border.setTitleColor(enabled ? UIManager.getColor("Label.foreground") : UIManager.getColor("Label.disabledForeground"));
             panel.repaint(); // Force a repaint to show the color change
@@ -1365,14 +1337,12 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
         if (!enabled) {
             // Get all components in the spinner panels and set their enabled state to false
             Container parent = skipImagesCheckbox.getParent();
-            if (parent instanceof JPanel) {
-                JPanel panel = (JPanel) parent;
+            if (parent instanceof JPanel panel) {
                 
                 // Set the enabled state for all child components
                 for (Component comp : panel.getComponents()) {
-                    if (comp instanceof JPanel) {
+                    if (comp instanceof JPanel spinnerPanel) {
                         // This is one of our spinner panels
-                        JPanel spinnerPanel = (JPanel) comp;
                         for (Component spinnerComponent : spinnerPanel.getComponents()) {
                             spinnerComponent.setEnabled(false);
                         }
@@ -1395,8 +1365,7 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
             
             // Update border color
             Container parent = skipImagesCheckbox.getParent();
-            if (parent instanceof JPanel) {
-                JPanel panel = (JPanel) parent;
+            if (parent instanceof JPanel panel) {
                 TitledBorder border = (TitledBorder) panel.getBorder();
                 border.setTitleColor(UIManager.getColor("Label.foreground"));
                 panel.repaint();
@@ -1415,8 +1384,7 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
         
         // Get the parent panel and update its title color
         Container parent = rotateWideImagesCheckbox.getParent();
-        if (parent instanceof JPanel) {
-            JPanel panel = (JPanel) parent;
+        if (parent instanceof JPanel panel) {
             TitledBorder border = (TitledBorder) panel.getBorder();
             border.setTitleColor(enabled ? UIManager.getColor("Label.foreground") : UIManager.getColor("Label.disabledForeground"));
             panel.repaint(); // Force a repaint to show the color change
@@ -1443,11 +1411,11 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
     }
     
     private String getSplitModeName(int mode) {
-        switch (mode) {
-            case 0: return "Auto-detect";
-            case 1: return "Keep original";
-            case 2: return "Split all";
-            default: return "Unknown";
-        }
+        return switch (mode) {
+            case 0 -> "Auto-detect";
+            case 1 -> "Keep original";
+            case 2 -> "Split all";
+            default -> "Unknown";
+        };
     }
 }

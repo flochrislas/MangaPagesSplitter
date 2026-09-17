@@ -11,10 +11,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -561,11 +561,8 @@ class BatchProcessorTest {
     private static void assertZipEntries(Path zip, String... expected) throws IOException {
         assertTrue(Files.isRegularFile(zip), "missing " + zip);
         try (ZipFile zf = new ZipFile(zip.toFile())) {
-            List<String> names = zf.stream().map(ZipEntry::getName).sorted().collect(Collectors.toList());
-            List<String> exp = new ArrayList<>();
-            for (String e : expected) exp.add(e);
-            exp.sort(null);
-            assertEquals(exp, names);
+            List<String> names = zf.stream().map(ZipEntry::getName).sorted().toList();
+            assertEquals(Arrays.stream(expected).sorted().toList(), names);
         }
     }
 
@@ -574,7 +571,7 @@ class BatchProcessorTest {
         try (Stream<Path> s = Files.list(root)) {
             List<String> bad = s.map(p -> p.getFileName().toString())
                     .filter(n -> n.startsWith(".") || n.endsWith("_temp") || n.endsWith(".part"))
-                    .collect(Collectors.toList());
+                    .toList();
             assertTrue(bad.isEmpty(), "leftovers in root: " + bad);
         }
     }

@@ -89,8 +89,8 @@ class AutoCropTest {
             for (int y = PAGE_Y0; y < PAGE_Y1; y++) img.setRGB(x, y, grey(0));
         }
         AutoCropResult r = AutoCrop.apply(img, sensitivity, false, m -> {});
-        assertEquals(0, r.leftCropped, "left");
-        assertTrue(r.rightCropped >= 75 && r.rightCropped <= 78, "right=" + r.rightCropped);
+        assertEquals(0, r.leftCropped(), "left");
+        assertTrue(r.rightCropped() >= 75 && r.rightCropped() <= 78, "right=" + r.rightCropped());
     }
 
     // ---- real content that must NOT be skipped ------------------------------
@@ -103,8 +103,8 @@ class AutoCropTest {
         for (int x = W - 66; x < W - 60; x++) for (int y = 100; y < 2060; y++) img.setRGB(x, y, grey(0));
 
         AutoCropResult r = AutoCrop.apply(img, sensitivity, true, m -> {});
-        assertEquals(57, r.leftCropped, "left");
-        assertEquals(57, r.rightCropped, "right");
+        assertEquals(57, r.leftCropped(), "left");
+        assertEquals(57, r.rightCropped(), "right");
     }
 
     @ParameterizedTest
@@ -113,9 +113,9 @@ class AutoCropTest {
         BufferedImage img = blank(W, H);
         content(img, PAGE_X0, PAGE_Y0, W, PAGE_Y1);
         AutoCropResult r = AutoCrop.apply(img, sensitivity, true, m -> {});
-        assertEquals(0, r.leftCropped, "left (symmetric with right)");
-        assertEquals(0, r.rightCropped, "right");
-        assertEquals(EXPECTED_TOP, r.topCropped, "top");
+        assertEquals(0, r.leftCropped(), "left (symmetric with right)");
+        assertEquals(0, r.rightCropped(), "right");
+        assertEquals(EXPECTED_TOP, r.topCropped(), "top");
     }
 
     @ParameterizedTest
@@ -127,8 +127,8 @@ class AutoCropTest {
             for (int y = 1000 - half; y < 1000 + half; y++) img.setRGB(x, y, grey(0));
         }
         AutoCropResult r = AutoCrop.apply(img, sensitivity, true, m -> {});
-        assertEquals(0, r.rightCropped, "right");
-        assertEquals(0, r.leftCropped, "left (symmetric with right)");
+        assertEquals(0, r.rightCropped(), "right");
+        assertEquals(0, r.leftCropped(), "left (symmetric with right)");
     }
 
     @Test
@@ -136,14 +136,14 @@ class AutoCropTest {
         BufferedImage img = blank(W, H);
         content(img, 0, 0, W, H);
         AutoCropResult r = AutoCrop.apply(img, 5, true, m -> {});
-        assertFalse(r.applied);
-        assertEquals(-1, r.splitX);
+        assertFalse(r.applied());
+        assertEquals(-1, r.splitX());
     }
 
     @Test
     void tinyImageIsLeftUntouched() {
         AutoCropResult r = AutoCrop.apply(blank(30, 30), 5, true, m -> {});
-        assertFalse(r.applied);
+        assertFalse(r.applied());
     }
 
     // ---- spine detection ----------------------------------------------------
@@ -154,10 +154,10 @@ class AutoCropTest {
         content(img, PAGE_X0, PAGE_Y0, 1840, PAGE_Y1);   // left page, ends 80 px before centre
         content(img, 2000, PAGE_Y0, W - PAGE_X0, PAGE_Y1); // right page, starts 80 px after centre
         AutoCropResult r = AutoCrop.apply(img, 5, true, m -> {});
-        assertTrue(r.applied);
+        assertTrue(r.applied());
         // gutter centre is x=1920 in the original, i.e. 1920 - leftCropped in cropped coords
-        int expected = 1920 - r.leftCropped;
-        assertTrue(Math.abs(r.splitX - expected) <= 2, "splitX=" + r.splitX + " expected~" + expected);
+        int expected = 1920 - r.leftCropped();
+        assertTrue(Math.abs(r.splitX() - expected) <= 2, "splitX=" + r.splitX() + " expected~" + expected);
     }
 
     // ---- real scans (skipped when test_images/ is absent) --------------------
@@ -167,9 +167,9 @@ class AutoCropTest {
     void realSpreadWithFaintRightBorderSmearIsTrimmedOnBothSides(int sensitivity) throws IOException {
         BufferedImage img = loadOrSkip("test_images/0028.jpg");
         AutoCropResult r = AutoCrop.apply(img, sensitivity, true, m -> {});
-        assertTrue(r.leftCropped >= 540 && r.leftCropped <= 543, "left=" + r.leftCropped);
-        assertEquals(r.leftCropped, r.rightCropped, "symmetric");
-        assertTrue(r.splitX > 0, "gutter detected");
+        assertTrue(r.leftCropped() >= 540 && r.leftCropped() <= 543, "left=" + r.leftCropped());
+        assertEquals(r.leftCropped(), r.rightCropped(), "symmetric");
+        assertTrue(r.splitX() > 0, "gutter detected");
     }
 
     @ParameterizedTest
@@ -177,16 +177,16 @@ class AutoCropTest {
     void realSpreadWithDarkShadowColumnIsTrimmedOnBothSides(int sensitivity) throws IOException {
         BufferedImage img = loadOrSkip("test_images/0041.jpg");
         AutoCropResult r = AutoCrop.apply(img, sensitivity, true, m -> {});
-        assertTrue(r.leftCropped >= 541 && r.leftCropped <= 545, "left=" + r.leftCropped);
-        assertEquals(r.leftCropped, r.rightCropped, "symmetric");
+        assertTrue(r.leftCropped() >= 541 && r.leftCropped() <= 545, "left=" + r.leftCropped());
+        assertEquals(r.leftCropped(), r.rightCropped(), "symmetric");
     }
 
     // ---- helpers ------------------------------------------------------------
 
     private static void assertSides(AutoCropResult r, int side, int top) {
-        assertEquals(side, r.leftCropped, "left");
-        assertEquals(side, r.rightCropped, "right");
-        assertEquals(top, r.topCropped, "top");
+        assertEquals(side, r.leftCropped(), "left");
+        assertEquals(side, r.rightCropped(), "right");
+        assertEquals(top, r.topCropped(), "top");
     }
 
     private static BufferedImage loadOrSkip(String path) throws IOException {

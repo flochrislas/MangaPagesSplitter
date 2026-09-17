@@ -28,18 +28,18 @@ public final class ExternalTools {
         System.out.println("Attempting external extraction for: " + archivePath);
 
         // Try 7-Zip first (most common)
-        String[] sevenZipPaths = {
+        List<String> sevenZipPaths = List.of(
             "C:\\Program Files\\7-Zip\\7z.exe",
             "C:\\Program Files (x86)\\7-Zip\\7z.exe",
             "/usr/bin/7z",
             "/usr/local/bin/7z"
-        };
+        );
 
         // Try WinRAR paths
-        String[] winRarPaths = {
+        List<String> winRarPaths = List.of(
             "C:\\Program Files\\WinRAR\\WinRAR.exe",
             "C:\\Program Files (x86)\\WinRAR\\WinRAR.exe"
-        };
+        );
 
         // Try 7-Zip
         for (String path : sevenZipPaths) {
@@ -90,12 +90,12 @@ public final class ExternalTools {
         return false;
     }
 
-    private static final String[] RAR_CREATOR_PATHS = {
+    private static final List<String> RAR_CREATOR_PATHS = List.of(
         "C:\\Program Files\\WinRAR\\WinRAR.exe",
         "C:\\Program Files (x86)\\WinRAR\\WinRAR.exe",
         "/usr/bin/rar",
         "/usr/local/bin/rar"
-    };
+    );
 
     /** Path of an installed WinRAR / rar executable able to create archives, or null if none is found. */
     public static String findRarCreator() {
