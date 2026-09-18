@@ -40,17 +40,24 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
     
     // Crop options
     private JSpinner cropLeftSpinner, cropRightSpinner, cropTopSpinner, cropBottomSpinner;
+    private final java.util.List<JLabel> marginUnitLabels = new java.util.ArrayList<>();
     private int cropLeft = 0, cropRight = 0, cropTop = 0, cropBottom = 0;
 
-    // Smart autocrop options
-    private JCheckBox smartAutoCropCheckbox;
-    private JSpinner smartAutoCropSensitivitySpinner;
+    // Cropping mode: exactly one of the three radios is selected
+    private JRadioButton noCropRadio, smartAutoCropRadio, manualCropRadio;
+    private JSlider smartAutoCropSensitivitySlider;
+    private JLabel sensitivityValueLabel;
     private boolean smartAutoCrop = false;
     private int smartAutoCropSensitivity = 5;
     
     // Output format selection
     private JRadioButton cbzFormatRadio, cbrFormatRadio, zipFormatRadio, rarFormatRadio, folderFormatRadio;
     
+    // Main layout containers, kept for size computations
+    private JScrollPane optionsScrollPane;
+    private JPanel rightPanel;
+    private JSplitPane mainSplitPane;
+
     // UI components for feedback
     private JTextPane inputFilesPane;
     private JTextArea logArea;
@@ -83,8 +90,6 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
     
     public MangaPagesSplitterUI() {
         setTitle("Manga Pages Splitter");
-        setSize(900, 975);
-        setMinimumSize(new Dimension(800, 975));
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         addWindowListener(new WindowAdapter() {
             @Override
@@ -105,13 +110,28 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
                 System.exit(0);
             }
         });
-        setLocationRelativeTo(null);
-        
         initComponents();
         createMenuBar();
         layoutComponents();
         wireEvents();
         updatePreview();
+        fitToScreen();
+    }
+
+    /**
+     * Sizes the window from its content: pack, cap to the usable screen area, and
+     * derive a minimum size so the options column and the right panes stay usable.
+     */
+    private void fitToScreen() {
+        pack();
+        Rectangle screen = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        Dimension packed = getSize();
+        setSize(Math.min(packed.width, screen.width), Math.min(packed.height, screen.height));
+        int minWidth = optionsScrollPane.getPreferredSize().width + rightPanel.getMinimumSize().width
+            + mainSplitPane.getDividerSize() + getInsets().left + getInsets().right;
+        int minHeight = Math.min(packed.height * 3 / 5, screen.height);
+        setMinimumSize(new Dimension(Math.min(minWidth, screen.width), minHeight));
+        setLocationRelativeTo(null);
     }
     
     private void createMenuBar() {
@@ -213,27 +233,45 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
         deletionGroup.add(deleteFilesRadio);
         
         // Crop options
-        Dimension spinnerSize = new Dimension(65, 26);
         cropLeftSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 1000, 1));
-        cropLeftSpinner.setPreferredSize(spinnerSize);
         cropRightSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 1000, 1));
-        cropRightSpinner.setPreferredSize(spinnerSize);
         cropTopSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 1000, 1));
-        cropTopSpinner.setPreferredSize(spinnerSize);
         cropBottomSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 1000, 1));
-        cropBottomSpinner.setPreferredSize(spinnerSize);
+        for (JSpinner spinner : new JSpinner[] {cropLeftSpinner, cropRightSpinner, cropTopSpinner, cropBottomSpinner,
+                                                skipStartSpinner, skipEndSpinner}) {
+            setSpinnerColumns(spinner, 4);
+        }
+        // "No cropping" is the default mode, so the manual spinners start disabled
+        cropLeftSpinner.setEnabled(false);
+        cropRightSpinner.setEnabled(false);
+        cropTopSpinner.setEnabled(false);
+        cropBottomSpinner.setEnabled(false);
 
-        // Smart autocrop
-        smartAutoCropCheckbox = new JCheckBox("Smart autocrop outer margins");
-        smartAutoCropCheckbox.setToolTipText(
+        // Cropping mode
+        ButtonGroup cropModeGroup = new ButtonGroup();
+        noCropRadio = new JRadioButton("No cropping", true);
+        smartAutoCropRadio = new JRadioButton("Smart autocrop");
+        smartAutoCropRadio.setToolTipText(
             "<html>Detects uniform white/black scan borders around a page and trims them.<br>"
             + "For landscape double-page spreads it also detects the spine so the split<br>"
             + "cut lands exactly on the seam instead of at width / 2.</html>");
-        smartAutoCropSensitivitySpinner = new JSpinner(new SpinnerNumberModel(5, 1, 10, 1));
-        smartAutoCropSensitivitySpinner.setPreferredSize(spinnerSize);
-        smartAutoCropSensitivitySpinner.setEnabled(false);
-        smartAutoCropSensitivitySpinner.setToolTipText(
-            "1 = conservative (only trims very clean margins), 10 = aggressive.");
+        manualCropRadio = new JRadioButton("Manual margins");
+        manualCropRadio.setToolTipText("Remove a fixed number of pixels from each edge of every image.");
+        cropModeGroup.add(noCropRadio);
+        cropModeGroup.add(smartAutoCropRadio);
+        cropModeGroup.add(manualCropRadio);
+
+        smartAutoCropSensitivitySlider = new JSlider(1, 10, 5);
+        smartAutoCropSensitivitySlider.setMajorTickSpacing(1);
+        smartAutoCropSensitivitySlider.setSnapToTicks(true);
+        smartAutoCropSensitivitySlider.setPaintTicks(false);
+        // Let the row decide the width; the default preferred width would widen the whole column.
+        smartAutoCropSensitivitySlider.setPreferredSize(smartAutoCropSensitivitySlider.getMinimumSize());
+        smartAutoCropSensitivitySlider.setEnabled(false);
+        smartAutoCropSensitivitySlider.setToolTipText(
+            "Sensitivity: 1 = conservative (only trims very clean margins), 10 = aggressive.");
+        sensitivityValueLabel = new JLabel("5");
+        sensitivityValueLabel.setEnabled(false);
         
         // Output format options
         ButtonGroup formatGroup = new ButtonGroup();
@@ -271,203 +309,107 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
     
     private void layoutComponents() {
         setLayout(new BorderLayout());
-        
-        // North panel: root folder selection
-        JPanel northPanel = new JPanel();
-        northPanel.setLayout(new BoxLayout(northPanel, BoxLayout.Y_AXIS));
+
+        // North: source folder. The location field takes all the spare width.
+        JPanel northPanel = new JPanel(new GridBagLayout());
         northPanel.setBorder(BorderFactory.createCompoundBorder(
             new EmptyBorder(8, 10, 5, 10),
-            BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(), "Input")
-        ));
-        JPanel folderPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
-        folderPanel.add(new JLabel("Location:"));
-        folderPanel.add(rootFolderField);
-        folderPanel.add(browseButton);
-        northPanel.add(folderPanel);
-        JPanel flattenPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
-        flattenPanel.add(flattenDirectoriesCheckbox);
-        northPanel.add(flattenPanel);
+            BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(), "Input")));
+        GridBagConstraints n = new GridBagConstraints();
+        n.insets = new Insets(2, 4, 2, 4);
+        n.anchor = GridBagConstraints.WEST;
+        n.gridy = 0;
+        n.gridx = 0;
+        northPanel.add(new JLabel("Location:"), n);
+        n.gridx = 1;
+        n.weightx = 1;
+        n.fill = GridBagConstraints.HORIZONTAL;
+        northPanel.add(rootFolderField, n);
+        n.gridx = 2;
+        n.weightx = 0;
+        n.fill = GridBagConstraints.NONE;
+        northPanel.add(browseButton, n);
+        n.gridy = 1;
+        n.gridx = 0;
+        n.gridwidth = 3;
+        northPanel.add(flattenDirectoriesCheckbox, n);
         add(northPanel, BorderLayout.NORTH);
-        
-        // West panel: configuration options
-        JPanel westPanel = new JPanel();
-        westPanel.setLayout(new BoxLayout(westPanel, BoxLayout.Y_AXIS));
-        westPanel.setBorder(new EmptyBorder(5, 10, 5, 10));
-        westPanel.setPreferredSize(new Dimension(300, 400));
-        
-        // Add crop options panel first
-        JPanel cropPanel = createSectionPanel("Image Cropping (applied before splitting)", 280, 175);
-        cropPanel.setLayout(new BoxLayout(cropPanel, BoxLayout.Y_AXIS));
-        cropPanel.add(Box.createRigidArea(new Dimension(0, 5)));
 
-        // Smart autocrop row
-        JPanel smartAutoCropPanel = createFixedHeightPanel(30);
-        smartAutoCropPanel.add(smartAutoCropCheckbox);
-        cropPanel.add(smartAutoCropPanel);
+        // Options column: content-sized sections, scrollable when the window is short.
+        JPanel optionsPanel = new JPanel(new GridBagLayout());
+        optionsPanel.setBorder(new EmptyBorder(0, 0, 0, 4));
+        GridBagConstraints o = new GridBagConstraints();
+        o.gridx = 0;
+        o.weightx = 1;
+        o.fill = GridBagConstraints.HORIZONTAL;
+        o.insets = new Insets(0, 0, 8, 0);
+        JPanel[] sections = {
+            createCropSection(),
+            createSplitSection(),
+            createDirectionSection(),
+            createExceptionsSection(),
+            createRotationSection(),
+            createDeletionSection(),
+            createNamingSection(),
+            createOutputFormatSection()
+        };
+        for (int i = 0; i < sections.length; i++) {
+            o.gridy = i;
+            optionsPanel.add(sections[i], o);
+        }
+        o.gridy = sections.length;
+        o.weighty = 1;
+        o.fill = GridBagConstraints.BOTH;
+        o.insets = new Insets(0, 0, 0, 0);
+        optionsPanel.add(Box.createGlue(), o);
 
-        JPanel smartAutoCropSensitivityPanel = createFixedHeightPanel(30);
-        smartAutoCropSensitivityPanel.add(new JLabel("Sensitivity (1-10):"));
-        smartAutoCropSensitivityPanel.add(smartAutoCropSensitivitySpinner);
-        cropPanel.add(smartAutoCropSensitivityPanel);
+        optionsScrollPane = new JScrollPane(optionsPanel,
+            ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+            ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        optionsScrollPane.setBorder(new EmptyBorder(0, 10, 0, 0));
+        optionsScrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        // Reserve room for the scroll bar so it never steals width from the sections.
+        Dimension optionsPref = optionsScrollPane.getPreferredSize();
+        optionsPref.width += optionsScrollPane.getVerticalScrollBar().getPreferredSize().width;
+        optionsScrollPane.setPreferredSize(optionsPref);
+        optionsScrollPane.setMinimumSize(new Dimension(optionsPref.width, 0));
 
-        // Left and right crop panel
-        JPanel leftRightPanel = createFixedHeightPanel(34);
-        leftRightPanel.add(new JLabel("Left:"));
-        leftRightPanel.add(cropLeftSpinner);
-        leftRightPanel.add(Box.createHorizontalStrut(10));
-        leftRightPanel.add(new JLabel("Right:"));
-        leftRightPanel.add(cropRightSpinner);
-        cropPanel.add(leftRightPanel);
-
-        // Top and bottom crop panel
-        JPanel topBottomPanel = createFixedHeightPanel(34);
-        topBottomPanel.add(new JLabel("Top:"));
-        topBottomPanel.add(cropTopSpinner);
-        topBottomPanel.add(Box.createHorizontalStrut(10));
-        topBottomPanel.add(new JLabel("Bottom:"));
-        topBottomPanel.add(cropBottomSpinner);
-        cropPanel.add(topBottomPanel);
-        
-        // Add explanatory label
-        JPanel infoPanel = createFixedHeightPanel(20);
-        JLabel infoLabel = new JLabel("Values in pixels. 0 means no cropping.");
-        infoLabel.setFont(new Font("SansSerif", Font.ITALIC, 10));
-        infoPanel.add(infoLabel);
-        cropPanel.add(infoPanel);
-        
-        westPanel.add(cropPanel);
-        westPanel.add(Box.createRigidArea(new Dimension(0, 8)));
-        
-        // Panel for splitting options
-        JPanel splitPanel = createSectionPanel("Image Splitting Options", 280, 90);
-        splitPanel.setLayout(new BoxLayout(splitPanel, BoxLayout.Y_AXIS));
-        
-        // Add components to splitting panel
-        autoDetectRadio.setAlignmentX(LEFT_ALIGNMENT);
-        keepOriginalRadio.setAlignmentX(LEFT_ALIGNMENT);
-        splitAllRadio.setAlignmentX(LEFT_ALIGNMENT);
-        
-        splitPanel.add(autoDetectRadio);
-        splitPanel.add(keepOriginalRadio);
-        splitPanel.add(splitAllRadio);
-        westPanel.add(splitPanel);
-        westPanel.add(Box.createRigidArea(new Dimension(0, 8)));
-        
-        // Panel for reading direction
-        JPanel directionPanel = createSectionPanel("Reading Direction", 280, 70);
-        directionPanel.setLayout(new BoxLayout(directionPanel, BoxLayout.Y_AXIS));
-        
-        japaneseRadio.setAlignmentX(LEFT_ALIGNMENT);
-        westernRadio.setAlignmentX(LEFT_ALIGNMENT);
-        
-        directionPanel.add(japaneseRadio);
-        directionPanel.add(westernRadio);
-        westPanel.add(directionPanel);
-        westPanel.add(Box.createRigidArea(new Dimension(0, 8)));
-        
-        // Panel for page exceptions
-        JPanel exceptionsPanel = createSectionPanel("Auto-split Exceptions", 280, 100);
-        exceptionsPanel.setLayout(new BoxLayout(exceptionsPanel, BoxLayout.Y_AXIS));
-        
-        skipImagesCheckbox.setAlignmentX(LEFT_ALIGNMENT);
-        exceptionsPanel.add(skipImagesCheckbox);
-        
-        // Create an inner panel for spinners with fixed dimensions
-        JPanel skipStartPanel = createFixedHeightPanel(30);
-        skipStartPanel.add(new JLabel("Skip from start:"));
-        skipStartPanel.add(skipStartSpinner);
-        exceptionsPanel.add(skipStartPanel);
-        
-        JPanel skipEndPanel = createFixedHeightPanel(30);
-        skipEndPanel.add(new JLabel("Skip from end:"));
-        skipEndPanel.add(skipEndSpinner);
-        exceptionsPanel.add(skipEndPanel);
-        
-        westPanel.add(exceptionsPanel);
-        westPanel.add(Box.createRigidArea(new Dimension(0, 8)));
-        
-        // Panel for rotation
-        JPanel rotationPanel = createSectionPanel("Image Rotation", 280, 50);
-        rotationPanel.setLayout(new BoxLayout(rotationPanel, BoxLayout.Y_AXIS));
-        
-        rotateWideImagesCheckbox.setAlignmentX(LEFT_ALIGNMENT);
-        rotationPanel.add(rotateWideImagesCheckbox);
-        westPanel.add(rotationPanel);
-        westPanel.add(Box.createRigidArea(new Dimension(0, 8)));
-        
-        // Panel for input file deletion
-        JPanel deletionPanel = createSectionPanel("Input Files Handling", 280, 70);
-        deletionPanel.setLayout(new BoxLayout(deletionPanel, BoxLayout.Y_AXIS));
-        
-        keepFilesRadio.setAlignmentX(LEFT_ALIGNMENT);
-        deleteFilesRadio.setAlignmentX(LEFT_ALIGNMENT);
-        deletionPanel.add(keepFilesRadio);
-        deletionPanel.add(deleteFilesRadio);
-        westPanel.add(deletionPanel);
-        westPanel.add(Box.createRigidArea(new Dimension(0, 8)));
-        
-        // Panel for output naming
-        JPanel namingPanel = createSectionPanel("Output Naming", 280, 85);
-        namingPanel.setLayout(new BoxLayout(namingPanel, BoxLayout.Y_AXIS));
-
-        customTitleCheckbox.setAlignmentX(LEFT_ALIGNMENT);
-        namingPanel.add(customTitleCheckbox);
-
-        JPanel titleFieldPanel = createFixedHeightPanel(30);
-        titleFieldPanel.add(new JLabel("Title:"));
-        titleFieldPanel.add(customTitleField);
-        namingPanel.add(titleFieldPanel);
-
-        JPanel namingHintPanel = createFixedHeightPanel(18);
-        JLabel namingHintLabel = new JLabel("Folder number is appended automatically");
-        namingHintLabel.setFont(new Font("SansSerif", Font.ITALIC, 10));
-        namingHintPanel.add(namingHintLabel);
-        namingPanel.add(namingHintPanel);
-
-        westPanel.add(namingPanel);
-        westPanel.add(Box.createRigidArea(new Dimension(0, 8)));
-
-        // Panel for output format - moved to be the last panel
-        JPanel outputFormatPanel = createSectionPanel("Output Format", 280, 139);
-        outputFormatPanel.setLayout(new BoxLayout(outputFormatPanel, BoxLayout.Y_AXIS));
-        
-        cbzFormatRadio.setAlignmentX(LEFT_ALIGNMENT);
-        cbrFormatRadio.setAlignmentX(LEFT_ALIGNMENT);
-        zipFormatRadio.setAlignmentX(LEFT_ALIGNMENT);
-        rarFormatRadio.setAlignmentX(LEFT_ALIGNMENT);
-        folderFormatRadio.setAlignmentX(LEFT_ALIGNMENT);
-        
-        outputFormatPanel.add(cbzFormatRadio);
-        outputFormatPanel.add(cbrFormatRadio);
-        outputFormatPanel.add(zipFormatRadio);
-        outputFormatPanel.add(rarFormatRadio);
-        outputFormatPanel.add(folderFormatRadio);
-        westPanel.add(outputFormatPanel);
-        
-        add(westPanel, BorderLayout.WEST);
-        
-        // Center panel: input files and log
-        JPanel centerPanel = new JPanel(new BorderLayout());
-        
-        // Input files section (renamed from Preview)
-        JPanel inputFilesPanel = createSectionPanel("Input Files", 400, 200);
+        // Right side: input files above the process log, both stretch.
+        JPanel inputFilesPanel = createSectionPanel("Input Files");
         inputFilesPanel.setLayout(new BorderLayout());
-        inputFilesPanel.add(new JScrollPane(inputFilesPane), BorderLayout.CENTER);
-        inputFilesPanel.setPreferredSize(new Dimension(400, 200));
-        
-        // Process section (renamed from Processing Log)
-        JPanel logPanel = createSectionPanel("Process", 400, 300);
+        JScrollPane inputFilesScroll = new JScrollPane(inputFilesPane);
+        inputFilesScroll.setMinimumSize(minimumTextPaneSize(inputFilesPane, 4));
+        inputFilesPanel.add(inputFilesScroll, BorderLayout.CENTER);
+
+        JPanel logPanel = createSectionPanel("Process");
         logPanel.setLayout(new BorderLayout());
         JScrollPane logScrollPane = new JScrollPane(logArea);
+        logScrollPane.setMinimumSize(minimumTextPaneSize(logArea, 4));
         logPanel.add(logScrollPane, BorderLayout.CENTER);
-        
-        JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, inputFilesPanel, logPanel);
-        splitPane.setResizeWeight(0.3);
-        centerPanel.add(splitPane, BorderLayout.CENTER);
-        
-        add(centerPanel, BorderLayout.CENTER);
-        
-        // South panel: control buttons and progress bar
+
+        JSplitPane rightSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, inputFilesPanel, logPanel);
+        rightSplit.setResizeWeight(0.3);
+        rightSplit.setContinuousLayout(true);
+        rightSplit.setBorder(null);
+
+        rightPanel = new JPanel(new BorderLayout());
+        rightPanel.setBorder(new EmptyBorder(0, 4, 0, 10));
+        rightPanel.add(rightSplit, BorderLayout.CENTER);
+        // The log is the reason the window exists: give it room to show a full preview line.
+        FontMetrics logMetrics = logArea.getFontMetrics(logArea.getFont());
+        int logColumns = 80;
+        rightPanel.setMinimumSize(new Dimension(logMetrics.charWidth('m') * logColumns / 2, 0));
+        rightPanel.setPreferredSize(new Dimension(logMetrics.charWidth('m') * logColumns,
+            optionsPanel.getPreferredSize().height));
+
+        mainSplitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, optionsScrollPane, rightPanel);
+        mainSplitPane.setResizeWeight(0);
+        mainSplitPane.setContinuousLayout(true);
+        mainSplitPane.setBorder(new EmptyBorder(5, 0, 5, 0));
+        mainSplitPane.setDividerLocation(optionsPref.width + 10);
+        add(mainSplitPane, BorderLayout.CENTER);
+
+        // South: progress bar and buttons.
         JPanel southPanel = new JPanel(new BorderLayout());
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         buttonPanel.add(cancelButton);
@@ -477,42 +419,241 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
         southPanel.setBorder(new EmptyBorder(5, 10, 10, 10));
         add(southPanel, BorderLayout.SOUTH);
     }
-    
+
+    private JPanel createSplitSection() {
+        JPanel section = createSectionPanel("Image Splitting Options");
+        addRow(section, autoDetectRadio);
+        addRow(section, keepOriginalRadio);
+        addRow(section, splitAllRadio);
+        return section;
+    }
+
+    private JPanel createDirectionSection() {
+        JPanel section = createSectionPanel("Reading Direction");
+        addRow(section, japaneseRadio);
+        addRow(section, westernRadio);
+        return section;
+    }
+
+    private JPanel createExceptionsSection() {
+        JPanel section = createSectionPanel("Auto-split Exceptions");
+        addRow(section, skipImagesCheckbox);
+        JPanel grid = new JPanel(new GridBagLayout());
+        GridBagConstraints c = new GridBagConstraints();
+        c.anchor = GridBagConstraints.WEST;
+        c.insets = new Insets(1, 0, 1, 6);
+        c.gridy = 0;
+        c.gridx = 0;
+        grid.add(new JLabel("Skip from start:"), c);
+        c.gridx = 1;
+        grid.add(skipStartSpinner, c);
+        c.gridy = 1;
+        c.gridx = 0;
+        grid.add(new JLabel("Skip from end:"), c);
+        c.gridx = 1;
+        grid.add(skipEndSpinner, c);
+        c.gridx = 2;
+        c.weightx = 1;
+        grid.add(Box.createGlue(), c);
+        addIndentedRow(section, grid);
+        return section;
+    }
+
+    private JPanel createRotationSection() {
+        JPanel section = createSectionPanel("Image Rotation");
+        addRow(section, rotateWideImagesCheckbox);
+        return section;
+    }
+
+    private JPanel createDeletionSection() {
+        JPanel section = createSectionPanel("Input Files Handling");
+        addRow(section, keepFilesRadio);
+        addRow(section, deleteFilesRadio);
+        return section;
+    }
+
+    private JPanel createNamingSection() {
+        JPanel section = createSectionPanel("Output Naming");
+        addRow(section, customTitleCheckbox);
+        JPanel titleRow = new JPanel(new GridBagLayout());
+        GridBagConstraints c = new GridBagConstraints();
+        c.anchor = GridBagConstraints.WEST;
+        c.insets = new Insets(0, 0, 0, 6);
+        c.gridx = 0;
+        titleRow.add(new JLabel("Title:"), c);
+        c.gridx = 1;
+        c.weightx = 1;
+        c.fill = GridBagConstraints.HORIZONTAL;
+        c.insets = new Insets(0, 0, 0, 0);
+        titleRow.add(customTitleField, c);
+        addIndentedRow(section, titleRow);
+        JLabel namingHintLabel = new JLabel("Folder number is appended automatically");
+        namingHintLabel.setFont(smallFont(Font.ITALIC));
+        addIndentedRow(section, namingHintLabel);
+        return section;
+    }
+
+    private JPanel createOutputFormatSection() {
+        JPanel section = createSectionPanel("Output Format");
+        addRow(section, cbzFormatRadio);
+        addRow(section, cbrFormatRadio);
+        addRow(section, zipFormatRadio);
+        addRow(section, rarFormatRadio);
+        addRow(section, folderFormatRadio);
+        return section;
+    }
+
     /**
-     * Creates a panel with a titled border and fixed dimensions.
-     * 
-     * @param title The title for the border
-     * @param width The fixed width for the panel
-     * @param height The fixed height for the panel
-     * @return A new JPanel with the specified properties
+     * A titled section that stretches horizontally to its column but never
+     * vertically beyond its content. Rows are added with {@link #addRow}.
      */
-    private JPanel createSectionPanel(String title, int width, int height) {
-        JPanel panel = new JPanel();
-        panel.setBorder(BorderFactory.createTitledBorder(
-            BorderFactory.createEtchedBorder(), title));
+    private JPanel createSectionPanel(String title) {
+        JPanel panel = new JPanel(new GridBagLayout()) {
+            private static final long serialVersionUID = 1L;
+            @Override
+            public Dimension getMaximumSize() {
+                return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+            }
+        };
+        panel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(), title));
         panel.setAlignmentX(LEFT_ALIGNMENT);
-        
-        // Set fixed dimensions
-        panel.setPreferredSize(new Dimension(width, height));
-        panel.setMaximumSize(new Dimension(width, height));
-        panel.setMinimumSize(new Dimension(width, height));
-            
         return panel;
     }
-    
-    /**
-     * Creates a simple left-aligned panel with fixed height for UI components.
-     * 
-     * @param height The fixed height for the panel
-     * @return A new JPanel with the specified properties
-     */
-    private JPanel createFixedHeightPanel(int height) {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-        panel.setAlignmentX(LEFT_ALIGNMENT);
-        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, height));
-        return panel;
+
+    /** Adds one full-width row to a section built by {@link #createSectionPanel}. */
+    private void addRow(JPanel section, Component row) {
+        addRow(section, row, 4);
     }
-    
+
+    /** Adds a row indented under a checkbox or radio (aligned with its text). */
+    private void addIndentedRow(JPanel section, Component row) {
+        addRow(section, row, 26);
+    }
+
+    private void addRow(JPanel section, Component row, int leftInset) {
+        GridBagConstraints c = new GridBagConstraints();
+        c.gridx = 0;
+        c.gridy = section.getComponentCount();
+        c.weightx = 1;
+        c.anchor = GridBagConstraints.WEST;
+        c.fill = GridBagConstraints.HORIZONTAL;
+        c.insets = new Insets(0, leftInset, 2, 8);
+        section.add(row, c);
+    }
+
+    private static void setSpinnerColumns(JSpinner spinner, int columns) {
+        if (spinner.getEditor() instanceof JSpinner.DefaultEditor editor) {
+            editor.getTextField().setColumns(columns);
+        }
+    }
+
+    private Font smallFont(int style) {
+        Font base = UIManager.getFont("Label.font");
+        return base.deriveFont(style, Math.max(9f, base.getSize2D() - 2f));
+    }
+
+    /** Minimum size of a scroll pane around a text component: a few lines high, any width. */
+    private static Dimension minimumTextPaneSize(JComponent text, int lines) {
+        FontMetrics fm = text.getFontMetrics(text.getFont());
+        return new Dimension(0, fm.getHeight() * lines + 8);
+    }
+
+    /**
+     * Builds the "Image Cropping" section: three exclusive modes, each with its
+     * own controls indented underneath.
+     */
+    private JPanel createCropSection() {
+        JPanel section = createSectionPanel("Image Cropping");
+        section.setToolTipText("Cropping is applied to every image before splitting.");
+        addRow(section, noCropRadio);
+        addRow(section, smartAutoCropRadio);
+        addIndentedRow(section, createSensitivityRow());
+        addRow(section, manualCropRadio);
+        addIndentedRow(section, createMarginsCross());
+        return section;
+    }
+
+    /** "Sensitivity" caption, then Conservative - slider - Aggressive, then the current value. */
+    private JPanel createSensitivityRow() {
+        JPanel row = new JPanel(new GridBagLayout());
+        GridBagConstraints c = new GridBagConstraints();
+        c.anchor = GridBagConstraints.WEST;
+        c.insets = new Insets(0, 0, 0, 4);
+
+        c.gridx = 0;
+        c.gridy = 0;
+        c.gridwidth = 4;
+        row.add(new JLabel("Sensitivity"), c);
+
+        JLabel lo = new JLabel("Conservative");
+        lo.setFont(smallFont(Font.PLAIN));
+        JLabel hi = new JLabel("Aggressive");
+        hi.setFont(smallFont(Font.PLAIN));
+
+        c.gridy = 1;
+        c.gridwidth = 1;
+        c.gridx = 0;
+        row.add(lo, c);
+        c.gridx = 1;
+        c.fill = GridBagConstraints.HORIZONTAL;
+        c.weightx = 1;
+        row.add(smartAutoCropSensitivitySlider, c);
+        c.gridx = 2;
+        c.fill = GridBagConstraints.NONE;
+        c.weightx = 0;
+        row.add(hi, c);
+        c.gridx = 3;
+        c.insets = new Insets(0, 6, 0, 0);
+        sensitivityValueLabel.setHorizontalAlignment(SwingConstants.RIGHT);
+        FontMetrics fm = sensitivityValueLabel.getFontMetrics(sensitivityValueLabel.getFont());
+        sensitivityValueLabel.setPreferredSize(new Dimension(fm.stringWidth("10"), fm.getHeight()));
+        row.add(sensitivityValueLabel, c);
+        return row;
+    }
+
+    /** Top / Left Right / Bottom spinners arranged like the edges they crop. */
+    private JPanel createMarginsCross() {
+        JPanel cross = new JPanel(new GridBagLayout());
+        GridBagConstraints c = new GridBagConstraints();
+
+        c.gridy = 0;
+        c.gridx = 0;
+        c.gridwidth = 2;
+        c.anchor = GridBagConstraints.CENTER;
+        cross.add(createMarginCell("Top", cropTopSpinner), c);
+
+        c.gridy = 1;
+        c.gridwidth = 1;
+        c.gridx = 0;
+        c.anchor = GridBagConstraints.WEST;
+        c.insets = new Insets(0, 0, 0, 8);
+        cross.add(createMarginCell("Left", cropLeftSpinner), c);
+        c.gridx = 1;
+        c.anchor = GridBagConstraints.EAST;
+        c.insets = new Insets(0, 0, 0, 0);
+        cross.add(createMarginCell("Right", cropRightSpinner), c);
+
+        c.gridy = 2;
+        c.gridx = 0;
+        c.gridwidth = 2;
+        c.anchor = GridBagConstraints.CENTER;
+        cross.add(createMarginCell("Bottom", cropBottomSpinner), c);
+        return cross;
+    }
+
+    private JPanel createMarginCell(String name, JSpinner spinner) {
+        JPanel cell = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        JLabel label = new JLabel(name + ":");
+        label.setLabelFor(spinner);
+        JLabel unit = new JLabel("px");
+        unit.setEnabled(spinner.isEnabled());
+        marginUnitLabels.add(unit);
+        cell.add(label);
+        cell.add(spinner);
+        cell.add(unit);
+        return cell;
+    }
+
     private void wireEvents() {
         flattenDirectoriesCheckbox.addActionListener(e -> {
             flattenDirectories = flattenDirectoriesCheckbox.isSelected();
@@ -699,17 +840,25 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
         cropTopSpinner.addChangeListener(cropListener);
         cropBottomSpinner.addChangeListener(cropListener);
 
-        // Smart autocrop
-        smartAutoCropCheckbox.addActionListener(e -> {
-            smartAutoCrop = smartAutoCropCheckbox.isSelected();
-            smartAutoCropSensitivitySpinner.setEnabled(smartAutoCrop);
-            setManualCropEnabled(!smartAutoCrop);
+        // Cropping mode
+        ActionListener cropModeListener = e -> applyCropMode();
+        noCropRadio.addActionListener(cropModeListener);
+        smartAutoCropRadio.addActionListener(cropModeListener);
+        manualCropRadio.addActionListener(cropModeListener);
+        smartAutoCropSensitivitySlider.addChangeListener(e -> {
+            smartAutoCropSensitivity = smartAutoCropSensitivitySlider.getValue();
+            sensitivityValueLabel.setText(Integer.toString(smartAutoCropSensitivity));
             updatePreview();
         });
-        smartAutoCropSensitivitySpinner.addChangeListener(e -> {
-            smartAutoCropSensitivity = (Integer) smartAutoCropSensitivitySpinner.getValue();
-            updatePreview();
-        });
+    }
+
+    /** Enables the controls of the selected cropping mode only; the other modes keep their values. */
+    private void applyCropMode() {
+        smartAutoCrop = smartAutoCropRadio.isSelected();
+        smartAutoCropSensitivitySlider.setEnabled(smartAutoCrop);
+        sensitivityValueLabel.setEnabled(smartAutoCrop);
+        setManualCropEnabled(manualCropRadio.isSelected());
+        updatePreview();
     }
 
     private void setManualCropEnabled(boolean enabled) {
@@ -717,6 +866,9 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
         cropRightSpinner.setEnabled(enabled);
         cropTopSpinner.setEnabled(enabled);
         cropBottomSpinner.setEnabled(enabled);
+        for (JLabel unit : marginUnitLabels) {
+            unit.setEnabled(enabled);
+        }
     }
     
     /**
@@ -974,15 +1126,18 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
             text.append("Image rotation: Wide images will be rotated 90° clockwise\n");
         }
         
-        // Crop information (smart and manual are mutually exclusive)
+        // Crop information (one mode at a time)
         if (smartAutoCrop) {
-            text.append("Smart autocrop: enabled (sensitivity=").append(smartAutoCropSensitivity).append(")\n");
-        } else if (cropLeft > 0 || cropRight > 0 || cropTop > 0 || cropBottom > 0) {
-            text.append("Cropping: ");
-            text.append("Left=" + cropLeft + "px, ");
-            text.append("Right=" + cropRight + "px, ");
-            text.append("Top=" + cropTop + "px, ");
-            text.append("Bottom=" + cropBottom + "px\n");
+            text.append("Cropping: smart autocrop (sensitivity ").append(smartAutoCropSensitivity).append(")\n");
+        } else if (manualCropRadio.isSelected()) {
+            if (cropLeft > 0 || cropRight > 0 || cropTop > 0 || cropBottom > 0) {
+                text.append("Cropping: manual, Left=" + cropLeft + "px, Right=" + cropRight
+                    + "px, Top=" + cropTop + "px, Bottom=" + cropBottom + "px\n");
+            } else {
+                text.append("Cropping: manual, all margins 0 (no effect)\n");
+            }
+        } else {
+            text.append("Cropping: none\n");
         }
         
         // Output format
@@ -1012,11 +1167,12 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
             text.append("- Create one output file per nested manga sub-folder\n");
         }
         
-        // Add cropping step if needed (smart and manual are mutually exclusive)
+        // Add cropping step if needed (one mode at a time)
         if (smartAutoCrop) {
             text.append("- Smart-autocrop uniform outer margins on each image; ")
                 .append("for double-page spreads, split on the detected spine\n");
-        } else if (cropLeft > 0 || cropRight > 0 || cropTop > 0 || cropBottom > 0) {
+        } else if (manualCropRadio.isSelected()
+                && (cropLeft > 0 || cropRight > 0 || cropTop > 0 || cropBottom > 0)) {
             text.append("- Crop " + cropLeft + "px from left, " + cropRight + "px from right, " +
                        cropTop + "px from top, " + cropBottom + "px from bottom of each image\n");
         }
@@ -1075,15 +1231,16 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
         cropRight = (Integer) cropRightSpinner.getValue();
         cropTop = (Integer) cropTopSpinner.getValue();
         cropBottom = (Integer) cropBottomSpinner.getValue();
-        smartAutoCrop = smartAutoCropCheckbox.isSelected();
-        smartAutoCropSensitivity = (Integer) smartAutoCropSensitivitySpinner.getValue();
+        smartAutoCrop = smartAutoCropRadio.isSelected();
+        smartAutoCropSensitivity = smartAutoCropSensitivitySlider.getValue();
 
-        // Smart autocrop and manual crop are mutually exclusive: when smart is on,
-        // ignore whatever is currently sitting in the manual crop spinners.
-        int effectiveCropLeft   = smartAutoCrop ? 0 : cropLeft;
-        int effectiveCropRight  = smartAutoCrop ? 0 : cropRight;
-        int effectiveCropTop    = smartAutoCrop ? 0 : cropTop;
-        int effectiveCropBottom = smartAutoCrop ? 0 : cropBottom;
+        // Manual margins only apply in the "Manual margins" mode; the spinners keep
+        // their values in the other modes so the user can switch back.
+        boolean manualCrop = manualCropRadio.isSelected();
+        int effectiveCropLeft   = manualCrop ? cropLeft : 0;
+        int effectiveCropRight  = manualCrop ? cropRight : 0;
+        int effectiveCropTop    = manualCrop ? cropTop : 0;
+        int effectiveCropBottom = manualCrop ? cropBottom : 0;
         
         // Update UI for processing state
         setProcessingState(true);
@@ -1140,10 +1297,10 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
 
                 // Add logging for crop values if any
                 if (smartAutoCrop) {
-                    publish("Smart autocrop: enabled (sensitivity=" + smartAutoCropSensitivity + ")");
+                    publish("Cropping: smart autocrop (sensitivity " + smartAutoCropSensitivity + ")");
                 } else if (effectiveCropLeft > 0 || effectiveCropRight > 0
                         || effectiveCropTop > 0 || effectiveCropBottom > 0) {
-                    publish("Cropping: Left=" + effectiveCropLeft + "px, Right=" + effectiveCropRight +
+                    publish("Cropping: manual, Left=" + effectiveCropLeft + "px, Right=" + effectiveCropRight +
                            "px, Top=" + effectiveCropTop + "px, Bottom=" + effectiveCropBottom + "px");
                 }
 
@@ -1237,15 +1394,13 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
         keepFilesRadio.setEnabled(!processing);
         deleteFilesRadio.setEnabled(!processing);
         
-        // Disable crop spinners during processing
-        // Manual crop is also disabled whenever smart autocrop is on (mutually exclusive).
-        boolean manualCropAllowed = !processing && !smartAutoCrop;
-        cropLeftSpinner.setEnabled(manualCropAllowed);
-        cropRightSpinner.setEnabled(manualCropAllowed);
-        cropTopSpinner.setEnabled(manualCropAllowed);
-        cropBottomSpinner.setEnabled(manualCropAllowed);
-        smartAutoCropCheckbox.setEnabled(!processing);
-        smartAutoCropSensitivitySpinner.setEnabled(!processing && smartAutoCrop);
+        // Cropping controls: radios off while processing, mode controls follow the selected mode
+        noCropRadio.setEnabled(!processing);
+        smartAutoCropRadio.setEnabled(!processing);
+        manualCropRadio.setEnabled(!processing);
+        smartAutoCropSensitivitySlider.setEnabled(!processing && smartAutoCrop);
+        sensitivityValueLabel.setEnabled(!processing && smartAutoCrop);
+        setManualCropEnabled(!processing && manualCropRadio.isSelected());
         
         // Disable format selection while processing
         cbzFormatRadio.setEnabled(!processing);

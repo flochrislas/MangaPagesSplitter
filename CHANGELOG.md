@@ -25,6 +25,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   margin) are recognised and skipped, so they no longer block the
   margin crawler and leave a wide white border untrimmed on that side.
 
+### Changed
+- **Image Cropping panel reworked.** The cropping mode is now an explicit
+  choice between *No cropping*, *Smart autocrop* and *Manual margins (pixels)*,
+  so it is obvious that smart autocrop and manual margins cannot be combined.
+  The sensitivity spinner is replaced by a *Conservative → Aggressive* slider,
+  and the four margin fields are laid out by edge (Top above, Left/Right in the
+  middle, Bottom below). Controls of the unselected modes are disabled but keep
+  their values.
+- **Window layout is now fully dynamic.** Sections, spinners and panes size
+  themselves from their content instead of hard-coded pixel sizes. The options
+  column scrolls when the window is short, sits behind a draggable divider so
+  wide windows can favour either the options or the Input Files / Process panes,
+  and the window opens sized to its content, capped to the screen, with a
+  computed minimum size so nothing is clipped by default.
+
 ### Fixed
 - Quote the Maven `-Dexec.skip=true` argument in CI so Windows PowerShell
   passes it intact instead of failing with `Unknown lifecycle phase ".skip=true"`.
