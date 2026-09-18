@@ -41,9 +41,9 @@ class BatchProcessorTest {
     @Test
     void folderIsPackagedIntoCbzAndKeptWhenKeepingOriginals() throws IOException {
         Path book = folderWithPages("book", 2);
-        BatchOptions o = options();
+        BatchOptions.Builder o = options();
 
-        BatchResult r = BatchProcessor.run(o, new FakeListener());
+        BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
         assertTrue(r.isCleanSuccess(), r.summary());
         assertEquals(1, r.outputs.size());
@@ -55,10 +55,10 @@ class BatchProcessorTest {
     @Test
     void folderIsDeletedOnlyAfterCbzIsPublished() throws IOException {
         Path book = folderWithPages("book", 2);
-        BatchOptions o = options();
-        o.deleteOriginals = true;
+        BatchOptions.Builder o = options();
+        o.deleteOriginals(true);
 
-        BatchResult r = BatchProcessor.run(o, new FakeListener());
+        BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
         assertTrue(r.isCleanSuccess(), r.summary());
         assertZipEntries(root.resolve("book.cbz"), "001.png", "002.png");
@@ -69,10 +69,10 @@ class BatchProcessorTest {
     @Test
     void archiveIsExtractedProcessedAndDeletedOnlyOnSuccess() throws IOException {
         Path zip = zipWithPages("book.zip", "001.png", "002.png");
-        BatchOptions o = options();
-        o.deleteOriginals = true;
+        BatchOptions.Builder o = options();
+        o.deleteOriginals(true);
 
-        BatchResult r = BatchProcessor.run(o, new FakeListener());
+        BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
         assertTrue(r.isCleanSuccess(), r.summary());
         assertZipEntries(root.resolve("book.cbz"), "001.png", "002.png");
@@ -84,12 +84,12 @@ class BatchProcessorTest {
     @Test
     void newFolderOutputNameIsPublishedWithoutTempLeftovers() throws IOException {
         Path book = folderWithPages("book", 1);
-        BatchOptions o = options();
-        o.outputFormat = "folder";
-        o.useCustomTitle = true;
-        o.customTitle = "Renamed";
+        BatchOptions.Builder o = options();
+        o.outputFormat(OutputFormat.FOLDER);
+        o.useCustomTitle(true);
+        o.customTitle("Renamed");
 
-        BatchResult r = BatchProcessor.run(o, new FakeListener());
+        BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
         assertTrue(r.isCleanSuccess(), r.summary());
         assertTrue(Files.isRegularFile(root.resolve("Renamed").resolve("001.png")));
@@ -100,10 +100,10 @@ class BatchProcessorTest {
     @Test
     void sameNameFolderOutputKeepsOriginalAsBackup() throws IOException {
         folderWithPages("book", 1);
-        BatchOptions o = options();
-        o.outputFormat = "folder";
+        BatchOptions.Builder o = options();
+        o.outputFormat(OutputFormat.FOLDER);
 
-        BatchResult r = BatchProcessor.run(o, new FakeListener());
+        BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
         assertTrue(r.isCleanSuccess(), r.summary());
         assertTrue(Files.isRegularFile(root.resolve("book").resolve("001.png")), "output in place");
@@ -120,10 +120,10 @@ class BatchProcessorTest {
         entries.put("../escaped.png", pngBytes());
         writeZip(evil, entries);
         byte[] before = Files.readAllBytes(evil);
-        BatchOptions o = options();
-        o.deleteOriginals = true;
+        BatchOptions.Builder o = options();
+        o.deleteOriginals(true);
 
-        BatchResult r = BatchProcessor.run(o, new FakeListener());
+        BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
         assertFalse(r.isCleanSuccess());
         assertTrue(r.outputs.isEmpty());
@@ -135,12 +135,12 @@ class BatchProcessorTest {
     @Test
     void cancellationAfterExtractionKeepsOriginalArchive() throws IOException {
         Path zip = zipWithPages("book.zip", "001.png");
-        BatchOptions o = options();
-        o.deleteOriginals = true;
+        BatchOptions.Builder o = options();
+        o.deleteOriginals(true);
         FakeListener listener = new FakeListener();
         listener.cancelWhenLogContains("Processing 1 folder");
 
-        BatchResult r = BatchProcessor.run(o, listener);
+        BatchResult r = BatchProcessor.run(o.build(), listener);
 
         assertTrue(r.cancelled);
         assertTrue(Files.isRegularFile(zip), "cancelled run must not delete inputs");
@@ -152,12 +152,12 @@ class BatchProcessorTest {
     void cancellationDuringPageProcessingDeletesNothingAndLeavesNoOutput() throws IOException {
         Path book = folderWithPages("book", 3);
         Path zip = zipWithPages("other.zip", "001.png");
-        BatchOptions o = options();
-        o.deleteOriginals = true;
+        BatchOptions.Builder o = options();
+        o.deleteOriginals(true);
         FakeListener listener = new FakeListener();
         listener.cancelWhenLogContains("Page 001.png");   // first page of the first volume
 
-        BatchResult r = BatchProcessor.run(o, listener);
+        BatchResult r = BatchProcessor.run(o.build(), listener);
 
         assertTrue(r.cancelled);
         assertTrue(r.failures.isEmpty(), "a cancelled job is not an error: " + r.failures);
@@ -175,9 +175,9 @@ class BatchProcessorTest {
         Files.write(book.resolve("notes.txt"), "keep me".getBytes(StandardCharsets.UTF_8));
         byte[] originalPage = Files.readAllBytes(book.resolve("001.png"));
         zipWithPages("book.zip", "001.png", "002.png");   // different content, same basename
-        BatchOptions o = options();
+        BatchOptions.Builder o = options();
 
-        BatchResult r = BatchProcessor.run(o, new FakeListener());
+        BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
         assertTrue(r.isCleanSuccess(), r.summary());
         assertTrue(Files.isRegularFile(book.resolve("notes.txt")), "unrelated file survived");
@@ -195,13 +195,13 @@ class BatchProcessorTest {
         Files.write(sibling, "x".getBytes(StandardCharsets.UTF_8));
         try {
             Path book = folderWithPages("book", 1);
-            BatchOptions o = options();
-            o.outputFormat = "folder";
-            o.deleteOriginals = true;
-            o.useCustomTitle = true;
-            o.customTitle = "..";
+            BatchOptions.Builder o = options();
+            o.outputFormat(OutputFormat.FOLDER);
+            o.deleteOriginals(true);
+            o.useCustomTitle(true);
+            o.customTitle("..");
 
-            BatchResult r = BatchProcessor.run(o, new FakeListener());
+            BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
             assertFalse(r.isCleanSuccess());
             assertTrue(r.outputs.isEmpty());
@@ -216,11 +216,11 @@ class BatchProcessorTest {
     @Test
     void sameNameZipOutputReplacesOwnSourceOnlyAfterVerification() throws IOException {
         Path zip = zipWithPages("book.zip", "b.png", "a.png");
-        BatchOptions o = options();
-        o.outputFormat = "zip";          // output path == input path
-        o.deleteOriginals = true;
+        BatchOptions.Builder o = options();
+        o.outputFormat(OutputFormat.ZIP);          // output path == input path
+        o.deleteOriginals(true);
 
-        BatchResult r = BatchProcessor.run(o, new FakeListener());
+        BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
         assertTrue(r.isCleanSuccess(), r.summary());
         assertZipEntries(zip, "001.png", "002.png");   // the verified output now sits at the input path
@@ -232,10 +232,10 @@ class BatchProcessorTest {
     void sameNameZipOutputKeepsOwnSourceAsBackupWhenKeepingOriginals() throws IOException {
         Path zip = zipWithPages("book.zip", "b.png", "a.png");
         byte[] before = Files.readAllBytes(zip);
-        BatchOptions o = options();
-        o.outputFormat = "zip";
+        BatchOptions.Builder o = options();
+        o.outputFormat(OutputFormat.ZIP);
 
-        BatchResult r = BatchProcessor.run(o, new FakeListener());
+        BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
         assertTrue(r.isCleanSuccess(), r.summary());
         assertZipEntries(zip, "001.png", "002.png");
@@ -248,13 +248,13 @@ class BatchProcessorTest {
         Path book = folderWithPages("book", 1);
         Path other = Files.createDirectories(root.resolve("Other"));
         Files.write(other.resolve("keep.txt"), "x".getBytes(StandardCharsets.UTF_8));
-        BatchOptions o = options();
-        o.outputFormat = "folder";
-        o.deleteOriginals = true;
-        o.useCustomTitle = true;
-        o.customTitle = "Other";
+        BatchOptions.Builder o = options();
+        o.outputFormat(OutputFormat.FOLDER);
+        o.deleteOriginals(true);
+        o.useCustomTitle(true);
+        o.customTitle("Other");
 
-        BatchResult r = BatchProcessor.run(o, new FakeListener());
+        BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
         assertFalse(r.isCleanSuccess(), "publishing over another input must fail");
         assertTrue(Files.isRegularFile(other.resolve("keep.txt")), "other folder untouched");
@@ -268,9 +268,9 @@ class BatchProcessorTest {
         folderWithPages("book", 1);
         Path stale = root.resolve("book.cbz");
         Files.write(stale, "not a real archive".getBytes(StandardCharsets.UTF_8));
-        BatchOptions o = options();   // cbz output, keep originals
+        BatchOptions.Builder o = options();   // cbz output, keep originals
 
-        BatchResult r = BatchProcessor.run(o, new FakeListener());
+        BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
         assertTrue(r.isCleanSuccess(), r.summary());
         assertZipEntries(root.resolve("book.cbz"), "001.png");
@@ -283,10 +283,10 @@ class BatchProcessorTest {
     void sameBasenameArchivesBothProduceOutputs() throws IOException {
         zipWithPages("book.zip", "001.png");
         zipWithPages("book.cbz", "001.png", "002.png");
-        BatchOptions o = options();
-        o.outputFormat = "folder";
+        BatchOptions.Builder o = options();
+        o.outputFormat(OutputFormat.FOLDER);
 
-        BatchResult r = BatchProcessor.run(o, new FakeListener());
+        BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
         assertTrue(r.isCleanSuccess(), r.summary());
         assertEquals(2, r.outputs.size());
@@ -301,12 +301,12 @@ class BatchProcessorTest {
     void failedFinalMoveRestoresTheOriginalFolder() throws IOException {
         Path book = folderWithPages("book", 2);
         byte[] page = Files.readAllBytes(book.resolve("001.png"));
-        BatchOptions o = options();
-        o.outputFormat = "folder";       // output path == source folder
-        o.deleteOriginals = true;
+        BatchOptions.Builder o = options();
+        o.outputFormat(OutputFormat.FOLDER);       // output path == source folder
+        o.deleteOriginals(true);
         BatchProcessor.beforePublishHook = () -> { throw new IOException("disk full (injected)"); };
         try {
-            BatchResult r = BatchProcessor.run(o, new FakeListener());
+            BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
             assertFalse(r.isCleanSuccess());
             assertTrue(r.outputs.isEmpty());
@@ -323,12 +323,12 @@ class BatchProcessorTest {
     void failedFinalMoveRestoresTheOriginalArchive() throws IOException {
         Path zip = zipWithPages("book.zip", "001.png");
         byte[] before = Files.readAllBytes(zip);
-        BatchOptions o = options();
-        o.outputFormat = "zip";          // output path == input path
-        o.deleteOriginals = true;
+        BatchOptions.Builder o = options();
+        o.outputFormat(OutputFormat.ZIP);          // output path == input path
+        o.deleteOriginals(true);
         BatchProcessor.beforePublishHook = () -> { throw new IOException("disk full (injected)"); };
         try {
-            BatchResult r = BatchProcessor.run(o, new FakeListener());
+            BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
             assertFalse(r.isCleanSuccess());
             assertArrayEquals(before, Files.readAllBytes(zip), "original archive restored in place");
@@ -344,12 +344,12 @@ class BatchProcessorTest {
         Path a = folderWithPages("a-book", 1);
         Path b = folderWithPages("b-book", 1);
         Path zip = zipWithPages("c-book.zip", "001.png");
-        BatchOptions o = options();
-        o.deleteOriginals = true;
+        BatchOptions.Builder o = options();
+        o.deleteOriginals(true);
         FakeListener listener = new FakeListener();
         listener.cancelWhenLogContains("Cleaning up");
 
-        BatchResult r = BatchProcessor.run(o, listener);
+        BatchResult r = BatchProcessor.run(o.build(), listener);
 
         assertTrue(r.cancelled, "cancel during cleanup must be reported");
         assertEquals(3, r.outputs.size(), "outputs published before cleanup stay");
@@ -362,13 +362,13 @@ class BatchProcessorTest {
     @Test
     void cancellationRightAfterReplacingAnOriginalReportsTheOutputAndTheDeletion() throws IOException {
         Path zip = zipWithPages("book.zip", "b.png", "a.png");
-        BatchOptions o = options();
-        o.outputFormat = "zip";          // output replaces its own source
-        o.deleteOriginals = true;
+        BatchOptions.Builder o = options();
+        o.outputFormat(OutputFormat.ZIP);          // output replaces its own source
+        o.deleteOriginals(true);
         FakeListener listener = new FakeListener();
         listener.cancelWhenLogContains("Replaced original archive");
 
-        BatchResult r = BatchProcessor.run(o, listener);
+        BatchResult r = BatchProcessor.run(o.build(), listener);
 
         assertTrue(r.cancelled);
         assertEquals(1, r.outputs.size(), "the published output is reported");
@@ -385,10 +385,10 @@ class BatchProcessorTest {
     void completedDeletionsAreReported() throws IOException {
         folderWithPages("book", 1);
         zipWithPages("other.zip", "001.png");
-        BatchOptions o = options();
-        o.deleteOriginals = true;
+        BatchOptions.Builder o = options();
+        o.deleteOriginals(true);
 
-        BatchResult r = BatchProcessor.run(o, new FakeListener());
+        BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
         assertTrue(r.isCleanSuccess(), r.summary());
         assertEquals(2, r.deletedInputs.size(), r.deletedInputs.toString());
@@ -400,10 +400,10 @@ class BatchProcessorTest {
     void cbrFallsBackToCbzUnderTruthfulNameWhenNoRarToolIsInstalled() throws IOException {
         assumeTrue(ExternalTools.findRarCreator() == null, "a RAR tool is installed on this machine");
         folderWithPages("book", 1);
-        BatchOptions o = options();
-        o.outputFormat = "cbr";
+        BatchOptions.Builder o = options();
+        o.outputFormat(OutputFormat.CBR);
 
-        BatchResult r = BatchProcessor.run(o, new FakeListener());
+        BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
         assertTrue(r.isCleanSuccess(), r.summary());
         assertEquals(1, r.warnings.size(), "format substitution is reported");
@@ -416,10 +416,10 @@ class BatchProcessorTest {
     void undecodablePageIsCopiedUnchangedAndReportedAsWarning() throws IOException {
         Path book = folderWithPages("book", 1);
         Files.write(book.resolve("002.png"), "this is not a png".getBytes(StandardCharsets.UTF_8));
-        BatchOptions o = options();
-        o.splitMode = 2;   // ask for a transformation so the page cannot silently pass through
+        BatchOptions.Builder o = options();
+        o.splitMode(SplitMode.ALL);   // ask for a transformation so the page cannot silently pass through
 
-        BatchResult r = BatchProcessor.run(o, new FakeListener());
+        BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
         assertTrue(r.isCleanSuccess(), r.summary());
         assertEquals(1, r.warnings.size(), r.warnings.toString());
@@ -435,9 +435,9 @@ class BatchProcessorTest {
         Files.write(book.resolve("1.png"), pngBytes(0xff0000));
         Files.write(book.resolve("2.png"), pngBytes(0x00ff00));
         Files.write(book.resolve("10.png"), pngBytes(0x0000ff));
-        BatchOptions o = options();
+        BatchOptions.Builder o = options();
 
-        BatchResult r = BatchProcessor.run(o, new FakeListener());
+        BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
         assertTrue(r.isCleanSuccess(), r.summary());
         assertZipEntries(root.resolve("book.cbz"), "001.png", "002.png", "003.png");
@@ -454,9 +454,9 @@ class BatchProcessorTest {
         Files.write(book.resolve("ch1").resolve("001.png"), pngBytes(0x111111));
         Files.write(book.resolve("ch1").resolve("002.png"), pngBytes(0x222222));
         Files.write(book.resolve("ch2").resolve("001.png"), pngBytes(0x333333));
-        BatchOptions o = options();
+        BatchOptions.Builder o = options();
 
-        BatchResult r = BatchProcessor.run(o, new FakeListener());
+        BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
         assertTrue(r.isCleanSuccess(), r.summary());
         assertZipEntries(root.resolve("book.cbz"), "001.png", "002.png", "003.png");
@@ -471,11 +471,11 @@ class BatchProcessorTest {
         for (int y = 0; y < 40; y++) for (int x = 0; x < 80; x++) spread.setRGB(x, y, x < 40 ? 0x00ff00 : 0xff0000);
         ImageIO.write(spread, "png", book.resolve("page05.png").toFile());
         Files.write(book.resolve("page06.png"), pngBytes(0x0000ff));
-        BatchOptions o = options();
-        o.splitMode = 0;            // auto: only the wide image is split
-        o.isJapaneseManga = true;   // right half first
+        BatchOptions.Builder o = options();
+        o.splitMode(SplitMode.WIDE_ONLY);            // auto: only the wide image is split
+        o.japaneseManga(true);   // right half first
 
-        BatchResult r = BatchProcessor.run(o, new FakeListener());
+        BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
         assertTrue(r.isCleanSuccess(), r.summary());
         assertZipEntries(root.resolve("book.cbz"), "001.png", "002.png", "003.png");
@@ -490,10 +490,10 @@ class BatchProcessorTest {
         Files.write(series.resolve("cover.png"), pngBytes(0x101010));
         Path chapter = Files.createDirectories(series.resolve("chapter"));
         Files.write(chapter.resolve("page.png"), pngBytes(0x202020));
-        BatchOptions o = options();
-        o.flattenDirectories = true;
+        BatchOptions.Builder o = options();
+        o.flattenDirectories(true);
 
-        BatchResult r = BatchProcessor.run(o, new FakeListener());
+        BatchResult r = BatchProcessor.run(o.build(), new FakeListener());
 
         assertTrue(r.isCleanSuccess(), r.summary());
         assertEquals(2, r.outputs.size());
@@ -512,11 +512,11 @@ class BatchProcessorTest {
     }
 
 
-    private BatchOptions options() {
-        BatchOptions o = new BatchOptions();
-        o.rootFolder = root.toString();
-        o.splitMode = 1;              // no split: keeps the tests about files, not pixels
-        o.outputFormat = "cbz";
+    private BatchOptions.Builder options() {
+        BatchOptions.Builder o = BatchOptions.builder();
+        o.rootFolder(root.toString());
+        o.splitMode(SplitMode.NEVER);              // no split: keeps the tests about files, not pixels
+        o.outputFormat(OutputFormat.CBZ);
         return o;
     }
 

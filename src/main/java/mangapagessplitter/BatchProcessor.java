@@ -85,7 +85,7 @@ public class BatchProcessor {
         ui = listener;
         BatchResult result = new BatchResult();
 
-        Path root = Paths.get(o.rootFolder).toAbsolutePath().normalize();
+        Path root = Paths.get(o.rootFolder()).toAbsolutePath().normalize();
         if (!Files.isDirectory(root)) {
             throw new IOException("Root folder does not exist: " + root);
         }
@@ -100,7 +100,7 @@ public class BatchProcessor {
                 return result;
             }
 
-            List<InputJob> jobs = discoverJobs(root, workspace, archives, o.flattenDirectories);
+            List<InputJob> jobs = discoverJobs(root, workspace, archives, o.flattenDirectories());
             logMessage("Processing " + jobs.size() + " folder" + (jobs.size() == 1 ? "" : "s") + "...");
 
             Set<Path> inputPaths = inputPaths(jobs, archives);
@@ -154,7 +154,7 @@ public class BatchProcessor {
             }
 
             updateProgress("Cleaning up...", 90);
-            if (o.deleteOriginals) {
+            if (o.deleteOriginals()) {
                 logMessage("Cleaning up: deleting inputs whose outputs were published...");
             }
             cleanUp(o, root, archives, jobs, published, failed, result);
@@ -165,8 +165,7 @@ public class BatchProcessor {
             }
 
             updateProgress("Complete", 100);
-            String outputType = o.outputFormat.equals("folder") ? "folders" : o.outputFormat.toUpperCase() + " files";
-            logMessage("Created " + result.outputs.size() + " " + outputType);
+            logMessage("Created " + result.outputs.size() + " " + o.outputFormat().plural());
             return result;
         } finally {
             try {
@@ -314,9 +313,9 @@ public class BatchProcessor {
     private static String resolveOutputName(InputJob job, BatchOptions o, Path root, Set<String> reserved)
             throws IOException {
         String name = job.displayName();
-        if (o.useCustomTitle && o.customTitle != null && !o.customTitle.trim().isEmpty()) {
+        if (o.useCustomTitle()) {
             String number = extractLastNumber(job.leafName());
-            name = o.customTitle.trim() + (number.isEmpty() ? "" : " " + number);
+            name = o.customTitle() + (number.isEmpty() ? "" : " " + number);
         }
         name = sanitizeName(name);
         if (name.isEmpty() || name.equals(".") || name.equals("..")) {
@@ -380,14 +379,14 @@ public class BatchProcessor {
                                                      String outputName, BatchOptions o, Set<Path> inputPaths,
                                                      BatchResult result) throws IOException {
         Path folder = job.folder();
-        int splitMode = o.splitMode;
-        boolean isJapaneseManga = o.isJapaneseManga;
-        int skipImagesFromStart = o.skipImagesFromStart;
-        int skipImagesFromEnd = o.skipImagesFromEnd;
-        boolean rotateWideImages = o.rotateWideImages;
-        int cropLeft = o.cropLeft, cropRight = o.cropRight, cropTop = o.cropTop, cropBottom = o.cropBottom;
-        boolean smartAutoCrop = o.smartAutoCrop;
-        int smartAutoCropSensitivity = o.smartAutoCropSensitivity;
+        SplitMode splitMode = o.splitMode();
+        boolean isJapaneseManga = o.japaneseManga();
+        int skipImagesFromStart = o.skipImagesFromStart();
+        int skipImagesFromEnd = o.skipImagesFromEnd();
+        boolean rotateWideImages = o.rotateWideImages();
+        int cropLeft = o.cropLeft(), cropRight = o.cropRight(), cropTop = o.cropTop(), cropBottom = o.cropBottom();
+        boolean smartAutoCrop = o.smartAutoCrop();
+        int smartAutoCropSensitivity = o.smartAutoCropSensitivity();
 
         List<Path> imagePaths;
         List<Path> processedFiles = new ArrayList<>();
@@ -396,7 +395,7 @@ public class BatchProcessor {
         // volume, so only direct children count; otherwise the whole tree is one volume.
         // Natural order (2 before 10) decides reading order and which pages the
         // skip-from-start/end counters hit.
-        try (Stream<Path> files = o.flattenDirectories ? Files.list(folder) : Files.walk(folder)) {
+        try (Stream<Path> files = o.flattenDirectories() ? Files.list(folder) : Files.walk(folder)) {
             imagePaths = files
                     .filter(Files::isRegularFile)
                     .filter(path -> isImageFile(path.toString()))
@@ -501,10 +500,10 @@ public class BatchProcessor {
                     isWideImage = width > height;
 
                     // Determine if this image should be split based on mode, dimensions, and exceptions
-                    if (splitMode == 2 && !isExceptionImage) {
+                    if (splitMode == SplitMode.ALL && !isExceptionImage) {
                         shouldSplit = true;
                     }
-                    else if (splitMode == 0 && !isExceptionImage) {
+                    else if (splitMode == SplitMode.WIDE_ONLY && !isExceptionImage) {
                         // Try to preserve special double-page spreads that can exist within otherwise single page images
                         // Here we consider such special spread to be a wide image that is within 3 pages of the latest single page image
                         boolean isSpecialSpread = (i - latestSinglePageImageIndex < 3);
@@ -525,7 +524,7 @@ public class BatchProcessor {
                         logMessage("Rotated wide image: " + imagePath.getFileName());
                     }
 
-                    if (isExceptionImage && (splitMode == 0 || splitMode == 2)) {
+                    if (isExceptionImage && splitMode.splits()) {
                         logMessage("Skipping split for exception image: " + imagePath.getFileName());
                     }
 
@@ -586,42 +585,42 @@ public class BatchProcessor {
             return null;
         }
 
-        if (o.outputFormat.equals("folder")) {
+        if (o.outputFormat() == OutputFormat.FOLDER) {
             Path finalPath = rootFolder.resolve(outputName);
             Path staged = Files.createTempDirectory(workspace, "out-");
             for (Path file : processedFiles) {
                 Files.copy(file, staged.resolve(file.getFileName()), StandardCopyOption.REPLACE_EXISTING);
             }
-            publishDirectory(staged, finalPath, job, o.deleteOriginals, inputPaths, result);
+            publishDirectory(staged, finalPath, job, o.deleteOriginals(), inputPaths, result);
             logMessage("Created output folder: " + finalPath.getFileName());
             return finalPath;
         }
 
-        String format = o.outputFormat;
-        if ((format.equals("cbr") || format.equals("rar")) && ExternalTools.findRarCreator() == null) {
-            String fallback = format.equals("cbr") ? "cbz" : "zip";
-            warn(result, "No WinRAR / rar installed: writing " + fallback.toUpperCase()
-                    + " instead of " + format.toUpperCase() + " for " + outputName);
+        OutputFormat format = o.outputFormat();
+        if (format.needsRar() && ExternalTools.findRarCreator() == null) {
+            OutputFormat fallback = format.fallbackWithoutRar();
+            warn(result, "No WinRAR / rar installed: writing " + fallback
+                    + " instead of " + format + " for " + outputName);
             format = fallback;
         }
-        String extension = "." + format;
+        String extension = "." + format.extension();
         Path finalPath = rootFolder.resolve(outputName + extension);
         Path staged = workspace.resolve(outputName + extension + ".part");
-        logMessage("Creating " + format.toUpperCase() + " archive: " + finalPath.getFileName());
+        logMessage("Creating " + format + " archive: " + finalPath.getFileName());
         switch (format) {
-            case "cbz", "zip" -> {
+            case CBZ, ZIP -> {
                 ZipArchive.create(processedFiles, staged.toFile(), BatchProcessor::isCancelled);
                 verifyZip(staged, processedFiles.size());
             }
-            case "cbr", "rar" -> {
+            case CBR, RAR -> {
                 RarArchive.create(processedFiles, staged.toFile(), BatchProcessor::logMessage, BatchProcessor::isCancelled);
                 if (!Files.isRegularFile(staged) || Files.size(staged) == 0) {
                     throw new IOException("archive was not written");
                 }
             }
-            default -> throw new IOException("Unknown output format: " + format);
+            case FOLDER -> throw new IllegalStateException("folder output is handled above");
         }
-        publishFile(staged, finalPath, job, o.deleteOriginals, result);
+        publishFile(staged, finalPath, job, o.deleteOriginals(), result);
         return finalPath;
 
         } finally {
@@ -789,7 +788,7 @@ public class BatchProcessor {
      */
     private static void cleanUp(BatchOptions o, Path root, List<ExtractedArchive> archives, List<InputJob> jobs,
                                 Map<InputJob, Path> published, List<InputJob> failed, BatchResult result) {
-        if (!o.deleteOriginals) {
+        if (!o.deleteOriginals()) {
             return;
         }
 

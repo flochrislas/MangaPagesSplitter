@@ -39,6 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wide windows can favour either the options or the Input Files / Process panes,
   and the window opens sized to its content, capped to the screen, with a
   computed minimum size so nothing is clipped by default.
+- **Typed run configuration.** `SplitMode` and `OutputFormat` enums replace the
+  0/1/2 split codes and the "cbz"/"folder" format strings, and `BatchOptions`
+  is now an immutable snapshot built through a validating builder (root folder
+  required, counts and margins non-negative, sensitivity 1-10, blank custom
+  title treated as none). No user-visible change.
 
 ### Fixed
 - Quote the Maven `-Dexec.skip=true` argument in CI so Windows PowerShell

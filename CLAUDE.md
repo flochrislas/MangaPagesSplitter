@@ -54,6 +54,7 @@ All code lives under the `mangapagessplitter` package (`src/main/java/mangapages
 
 - **`Main`** — Entry point: applies the saved FlatLaf theme and opens the window.
 - **`BatchProcessor`** — Batch orchestration: discovers folders and archives under the root, extracts archives, runs every image through crop → split decision → rotation → split → second-pass autocrop, writes the output (CBZ/CBR/ZIP/RAR/folder) and cleans up. Talks to the UI only through `ProcessingListener`.
+- **`BatchOptions`** — Immutable, validated snapshot of one run's settings, built with `BatchOptions.builder()`. `SplitMode` and `OutputFormat` enums replace the former int/string codes.
 - **`ProcessingListener`** — What the engine needs from its driver: `isCancelled()`, `log()`, `progress()`.
 - **`image.AutoCrop` / `AutoCropResult`** — Smart autocrop: margin trimming and spine detection. Pure image analysis, documented in `doc/autocrop.md`.
 - **`image.PageTransform`** — Manual crop, 90° rotation, double-page split (`doc/autosplit.md`).

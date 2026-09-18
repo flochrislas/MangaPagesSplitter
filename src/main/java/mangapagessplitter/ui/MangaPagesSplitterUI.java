@@ -6,6 +6,8 @@ import com.formdev.flatlaf.FlatLightLaf;
 import mangapagessplitter.BatchOptions;
 import mangapagessplitter.BatchProcessor;
 import mangapagessplitter.BatchResult;
+import mangapagessplitter.OutputFormat;
+import mangapagessplitter.SplitMode;
 import mangapagessplitter.ProcessingListener;
 
 import javax.swing.*;
@@ -71,14 +73,14 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
     private JCheckBoxMenuItem darkThemeMenuItem;
 
     // Configuration values
-    private int splitMode = 0; // 0=auto, 1=keep original, 2=split all
+    private SplitMode splitMode = SplitMode.WIDE_ONLY;
     private boolean isJapaneseManga = true;
     private boolean deleteOriginals = false;
     private int skipImagesFromStart = 0;
     private int skipImagesFromEnd = 0;
     private boolean rotateWideImages = false;
     private String rootFolder = "";
-    private String outputFormat = "cbz"; // Default output format
+    private OutputFormat outputFormat = OutputFormat.CBZ;
     private boolean flattenDirectories = false;
     private boolean useCustomTitle = false;
     private String customTitle = "";
@@ -703,17 +705,17 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
         // Splitting option changes
         ActionListener splitListener = e -> {
             if (autoDetectRadio.isSelected()) {
-                splitMode = 0;
+                splitMode = SplitMode.WIDE_ONLY;
                 setDirectionPanelEnabled(true);
                 setExceptionsPanelEnabled(true);
                 setRotationPanelEnabled(true);
             } else if (keepOriginalRadio.isSelected()) {
-                splitMode = 1;
+                splitMode = SplitMode.NEVER;
                 setDirectionPanelEnabled(false);
                 setExceptionsPanelEnabled(false);
                 setRotationPanelEnabled(true);
             } else if (splitAllRadio.isSelected()) {
-                splitMode = 2;
+                splitMode = SplitMode.ALL;
                 setDirectionPanelEnabled(true);
                 setExceptionsPanelEnabled(true);
                 // Only enable rotation if we have exceptions
@@ -782,15 +784,15 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
         // Output format selection
         ActionListener formatListener = e -> {
             if (cbzFormatRadio.isSelected()) {
-                outputFormat = "cbz";
+                outputFormat = OutputFormat.CBZ;
             } else if (cbrFormatRadio.isSelected()) {
-                outputFormat = "cbr";
+                outputFormat = OutputFormat.CBR;
             } else if (zipFormatRadio.isSelected()) {
-                outputFormat = "zip";
+                outputFormat = OutputFormat.ZIP;
             } else if (rarFormatRadio.isSelected()) {
-                outputFormat = "rar";
+                outputFormat = OutputFormat.RAR;
             } else if (folderFormatRadio.isSelected()) {
-                outputFormat = "folder";
+                outputFormat = OutputFormat.FOLDER;
             }
             updatePreview();
         };
@@ -1099,13 +1101,13 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
         // Splitting mode
         text.append("Splitting: ");
         switch (splitMode) {
-            case 0 -> text.append("Auto-detect double pages\n");
-            case 1 -> text.append("Keep all images original\n");
-            case 2 -> text.append("Split all images in half\n");
+            case WIDE_ONLY -> text.append("Auto-detect double pages\n");
+            case NEVER -> text.append("Keep all images original\n");
+            case ALL -> text.append("Split all images in half\n");
         }
         
         // Reading direction (if applicable)
-        if (splitMode == 0 || splitMode == 2) {
+        if (splitMode.splits()) {
             text.append("Reading direction: ");
             text.append(isJapaneseManga ? 
                 "Japanese style (right to left)" : 
@@ -1114,15 +1116,14 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
         }
         
         // Exception images
-        if ((splitMode == 0 || splitMode == 2) && skipImagesCheckbox.isSelected()) {
+        if (splitMode.splits() && skipImagesCheckbox.isSelected()) {
             text.append("Page exceptions: Skip splitting the first ").append(skipImagesFromStart);
             text.append(" and the last ").append(skipImagesFromEnd);
             text.append(" images of each manga\n");
         }
         
         // Rotation info
-        if (rotateWideImages && (splitMode != 2 || 
-            (splitMode == 2 && skipImagesCheckbox.isSelected()))) {
+        if (rotateWideImages && (splitMode != SplitMode.ALL || skipImagesCheckbox.isSelected())) {
             text.append("Image rotation: Wide images will be rotated 90° clockwise\n");
         }
         
@@ -1142,14 +1143,7 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
         
         // Output format
         text.append("Output format: ");
-        switch (outputFormat) {
-            case "cbz" -> text.append("CBZ (Comic Book ZIP)");
-            case "cbr" -> text.append("CBR (Comic Book RAR)");
-            case "zip" -> text.append("ZIP archive");
-            case "rar" -> text.append("RAR archive");
-            case "folder" -> text.append("Folder with images (no archive)");
-        }
-        text.append("\n");
+        text.append(outputFormat.label()).append("\n");
         
         // File handling
         text.append("Input Files handling: ");
@@ -1177,31 +1171,22 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
                        cropTop + "px from top, " + cropBottom + "px from bottom of each image\n");
         }
         
-        if (splitMode == 0) {
+        if (splitMode == SplitMode.WIDE_ONLY) {
             text.append("- Analyze each image and split those that are wider than tall\n");
-        } else if (splitMode == 2) {
+        } else if (splitMode == SplitMode.ALL) {
             text.append("- Split all images in half\n");
         }
         
-        if ((splitMode == 0 || splitMode == 2) && skipImagesCheckbox.isSelected() && 
+        if (splitMode.splits() && skipImagesCheckbox.isSelected() && 
             (skipImagesFromStart > 0 || skipImagesFromEnd > 0)) {
             text.append("- Skip splitting images at the beginning and end as specified\n");
         }
         
-        if (rotateWideImages && (splitMode != 2 || 
-            (splitMode == 2 && skipImagesCheckbox.isSelected()))) {
+        if (rotateWideImages && (splitMode != SplitMode.ALL || skipImagesCheckbox.isSelected())) {
             text.append("- Rotate wide images (width > height) 90° clockwise\n");
         }
         
-        text.append("- Create new ");
-        switch (outputFormat) {
-            case "cbz" -> text.append("CBZ files");
-            case "cbr" -> text.append("CBR files");
-            case "zip" -> text.append("ZIP archives");
-            case "rar" -> text.append("RAR archives");
-            case "folder" -> text.append("folders with processed images");
-        }
-        text.append(" for each manga\n");
+        text.append("- Create new ").append(outputFormat.plural()).append(" for each manga\n");
         
         if (deleteOriginals) {
             text.append("- Delete original archive files and extracted folders\n");
@@ -1252,24 +1237,23 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
         appendToLog("Root folder: " + rootFolder);
         
         lastResult = null;
-        BatchOptions options = new BatchOptions();
-        options.rootFolder = rootFolder;
-        options.splitMode = splitMode;
-        options.isJapaneseManga = isJapaneseManga;
-        options.deleteOriginals = deleteOriginals;
-        options.skipImagesFromStart = skipImagesFromStart;
-        options.skipImagesFromEnd = skipImagesFromEnd;
-        options.rotateWideImages = rotateWideImages;
-        options.outputFormat = outputFormat;
-        options.cropLeft = effectiveCropLeft;
-        options.cropRight = effectiveCropRight;
-        options.cropTop = effectiveCropTop;
-        options.cropBottom = effectiveCropBottom;
-        options.smartAutoCrop = smartAutoCrop;
-        options.smartAutoCropSensitivity = smartAutoCropSensitivity;
-        options.flattenDirectories = flattenDirectories;
-        options.useCustomTitle = useCustomTitle;
-        options.customTitle = customTitleField.getText().trim();
+        // Freeze the configuration: the worker only ever sees this validated snapshot.
+        BatchOptions options = BatchOptions.builder()
+            .rootFolder(rootFolder)
+            .splitMode(splitMode)
+            .japaneseManga(isJapaneseManga)
+            .deleteOriginals(deleteOriginals)
+            .skipImagesFromStart(skipImagesFromStart)
+            .skipImagesFromEnd(skipImagesFromEnd)
+            .rotateWideImages(rotateWideImages)
+            .outputFormat(outputFormat)
+            .crop(effectiveCropLeft, effectiveCropRight, effectiveCropTop, effectiveCropBottom)
+            .smartAutoCrop(smartAutoCrop)
+            .smartAutoCropSensitivity(smartAutoCropSensitivity)
+            .flattenDirectories(flattenDirectories)
+            .useCustomTitle(useCustomTitle)
+            .customTitle(customTitleField.getText())
+            .build();
 
         // Create and start worker thread for background processing
         currentWorker = new SwingWorker<BatchResult, String>() {
@@ -1285,8 +1269,8 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
             }
 
             private BatchResult runBatch() throws Exception {
-                publish("Split mode: " + getSplitModeName(splitMode));
-                if (splitMode == 0 || splitMode == 2) {
+                publish("Split mode: " + splitMode.label());
+                if (splitMode.splits()) {
                     publish("Reading direction: " + (isJapaneseManga ? "Japanese (right to left)" : "Western (left to right)"));
                 }
 
@@ -1304,11 +1288,11 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
                            "px, Top=" + effectiveCropTop + "px, Bottom=" + effectiveCropBottom + "px");
                 }
 
-                if (rotateWideImages && splitMode != 2) {
+                if (rotateWideImages && splitMode != SplitMode.ALL) {
                     publish("Wide images will be rotated 90° clockwise");
                 }
 
-                publish("Output format: " + outputFormat);
+                publish("Output format: " + outputFormat.label());
                 publish("File handling: " + (deleteOriginals ? "Delete originals" : "Keep originals"));
                 publish("------------------------------");
 
@@ -1568,12 +1552,4 @@ public final class MangaPagesSplitterUI extends JFrame implements ProcessingList
         return startButton != null && !startButton.isEnabled() && currentWorker != null;
     }
     
-    private String getSplitModeName(int mode) {
-        return switch (mode) {
-            case 0 -> "Auto-detect";
-            case 1 -> "Keep original";
-            case 2 -> "Split all";
-            default -> "Unknown";
-        };
-    }
 }
