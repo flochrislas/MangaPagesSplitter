@@ -7,8 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-09-18
+
 ### Added
-- **Smart autocrop outer margins** — new checkbox in the *Image Cropping*
+- **Smart autocrop outer margins** — new mode in the *Image Cropping*
   panel. When enabled, MangaPagesSplitter analyzes each image to trim
   uniform white/black scan borders on all four sides (with a small
   safety padding), and on landscape double-page spreads locates the
@@ -190,7 +192,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial public release: batch-split double-page manga spreads into single
   pages, with archive (CBZ/CBR/ZIP/RAR) input support.
 
-[Unreleased]: https://github.com/flochrislas/MangaPagesSplitter/compare/v2.2.2...HEAD
+[Unreleased]: https://github.com/flochrislas/MangaPagesSplitter/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/flochrislas/MangaPagesSplitter/compare/v2.2.2...v2.3.0
 [2.2.2]: https://github.com/flochrislas/MangaPagesSplitter/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/flochrislas/MangaPagesSplitter/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/flochrislas/MangaPagesSplitter/compare/v2.1.0...v2.2.0
