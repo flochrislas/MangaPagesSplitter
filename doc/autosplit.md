@@ -15,11 +15,14 @@ The options are in `src/main/java/mangapagessplitter/ui/MangaPagesSplitterUI.jav
 
 ### Image Splitting Options
 
-| Radio button | Internal mode | Behaviour |
+| Radio button | `SplitMode` | Behaviour |
 |---|---|---|
-| **Only split wide images (smart)** (default) | 0, "Auto-detect" | Splits an image only when it is detected as a double-page spread. |
-| **No split at all** | 1, "Keep original" | Never splits. Cropping, rotation and re-archiving still apply. |
-| **Split all images in half** | 2, "Split all" | Splits every image, portrait or landscape, unless it is an exception. |
+| **Only split wide images (smart)** (default) | `WIDE_ONLY` | Splits an image only when it is detected as a double-page spread. |
+| **No split at all** | `NEVER` | Never splits. Cropping, rotation and re-archiving still apply. |
+| **Split all images in half** | `ALL` | Splits every image, portrait or landscape, unless it is an exception. |
+
+The selected mode, format and every other setting are frozen into an immutable
+`BatchOptions` when processing starts (`src/main/java/mangapagessplitter/BatchOptions.java`).
 
 Reading direction, exceptions and rotation are greyed out when they cannot
 apply to the chosen mode.
@@ -42,7 +45,7 @@ log shows `Skipping split for exception image: <name>` for each one.
 
 **Rotate wide images 90° clockwise** rotates a landscape image that is *not*
 being split, so a wide illustration fills a portrait screen. It never touches an
-image that is about to be split. In "Split all" mode it is only available when
+image that is about to be split. In `ALL` mode it is only available when
 exceptions are enabled, because only exception images can remain wide.
 
 ## Detection rule in auto mode
@@ -72,7 +75,7 @@ the whole sub-tree is one volume. For each image:
 
    Accepted wide images are logged as `Auto-detected double page for: <name>`.
 
-In "Split all" mode steps 2 and 4 are skipped: every non-exception image is cut,
+In `ALL` mode steps 2 and 4 are skipped: every non-exception image is cut,
 including portrait ones.
 
 ## Where the cut lands
@@ -137,7 +140,7 @@ output format (CBZ, ZIP, CBR, RAR or a plain folder).
 ## Log lines summary
 
 ```
-Split mode: Auto-detect
+Split mode: Only split wide images
 Reading direction: Japanese (right to left)
 Skipping 1 images from start and 2 images from end of each manga
 Auto-detected double page for: 0028.jpg

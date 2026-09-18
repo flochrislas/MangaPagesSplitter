@@ -13,17 +13,18 @@ in `src/main/java/mangapagessplitter/ui/MangaPagesSplitterUI.java`.
 
 ## Using it
 
-In the **Image Cropping (applied before splitting)** panel:
+In the **Image Cropping** panel, the cropping mode is one of three radio buttons:
 
-- **Smart autocrop outer margins** checkbox turns the feature on.
-- **Sensitivity (1-10)** spinner tunes how aggressive the detector is. Default is
-  5. Lower values are more conservative and stop at fainter details; higher
-  values ignore small or low-contrast features and trim more.
+- **No cropping** (default).
+- **Smart autocrop** turns the feature on. The **Sensitivity** slider under it
+  (1 = *Conservative*, 10 = *Aggressive*, default 5) tunes how aggressive the
+  detector is. Lower values stop at fainter details; higher values ignore small
+  or low-contrast features and trim more.
+- **Manual margins** applies fixed Left/Right/Top/Bottom pixel offsets instead.
 
-Smart autocrop and manual cropping are mutually exclusive. Enabling the checkbox
-greys out the manual L/R/T/B spinners and their values are ignored for the run,
-so a leftover manual offset cannot silently over-crop a batch. Turn the checkbox
-off to use fixed manual offsets again.
+The modes are exclusive: the controls of the unselected modes are greyed out and
+`BatchOptions` zeroes the manual margins whenever smart autocrop is on, so a
+leftover manual offset cannot silently over-crop a batch.
 
 The processing log shows what was decided for each image. For the first three
 images it prints the exact amounts trimmed:
