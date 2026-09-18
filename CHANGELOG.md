@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   margin crawler and leave a wide white border untrimmed on that side.
 
 ### Fixed
+- Quote the Maven `-Dexec.skip=true` argument in CI so Windows PowerShell
+  passes it intact instead of failing with `Unknown lifecycle phase ".skip=true"`.
 - **Input files can no longer be lost by a failed or cancelled run.** Archives
   are extracted into a hidden per-run workspace instead of next to your folders,
   so an existing folder with the same name is never overwritten or deleted.

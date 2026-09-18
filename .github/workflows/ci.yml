@@ -31,7 +31,7 @@ jobs:
       # Compile with -Xlint:all as configured in the pom and run the JUnit suite.
       # jpackage is skipped here: it is exercised by the release rehearsal below.
       - name: Compile and test
-        run: mvn -B -ntp verify -Dexec.skip=true
+        run: mvn -B -ntp verify "-Dexec.skip=true"
 
       - name: Upload test reports on failure
         if: failure()
