@@ -23,9 +23,11 @@ Built artifacts are **not** committed to the repository.
    git push --follow-tags
    ```
 5. GitHub Actions will:
-   - verify that `pom.xml` version matches the tag,
-   - run `mvn package` (producing the JAR and a self-contained Windows
-     portable ZIP via `jpackage`),
+   - verify that the `pom.xml` version matches the tag and that
+     `CHANGELOG.md` has a `## [X.Y.Z]` section (the run fails early otherwise),
+   - compile and run the test suite (same gate as CI),
+   - run `mvn package` on Windows (producing the JAR and a self-contained
+     Windows portable ZIP via `jpackage`),
    - extract the matching section from `CHANGELOG.md` as release notes,
    - create the GitHub Release with these four assets attached:
      - `MangaPagesSplitter.jar`
